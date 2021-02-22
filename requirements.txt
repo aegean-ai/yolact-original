@@ -1,0 +1,15 @@
+pip
+cython 
+torchvision==0.5.0
+torch==1.4
+#cudatoolkit
+#cudnn
+#cuda100
+matplotlib
+# git # to download COCO dataset
+# curl # to download COCO dataset
+# unzip # to download COCO dataset
+opencv-python 
+pillow <7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
+pycocotools 
+PyQt5 # needed on KDE/Qt envs for matplotlib
