@@ -30,8 +30,11 @@ fi
 
 # Download the image data.
 cd ./images
-echo "Downloading MSCOCO test images ..."
-curl -LO http://images.cocodataset.org/zips/test2017.zip
+#echo "Downloading MSCOCO test images ..."
+#curl -LO http://images.cocodataset.org/zips/test2017.zip
+
+echo "Downloading MSCOCO test images from s3"
+aws s3 cp s3://cv.datasets.aegean.ai/mscoco/test2017.zip .
 
 cd ../
 if [ ! -d annotations ]
@@ -41,8 +44,12 @@ fi
 
 # Download the annotation data.
 cd ./annotations
-echo "Downloading MSCOCO test info ..."
-curl -LO http://images.cocodataset.org/annotations/image_info_test2017.zip
+#echo "Downloading MSCOCO test info ..."
+#curl -LO http://images.cocodataset.org/annotations/image_info_test2017.zip
+
+echo "Downloading MSCOCO test info from s3"
+aws s3 cp s3://cv.datasets.aegean.ai/mscoco/image_info_test2017.zip .
+
 echo "Finished downloading. Now extracting ..."
 
 # Unzip data
