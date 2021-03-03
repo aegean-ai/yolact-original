@@ -10,6 +10,6 @@ matplotlib
 # curl # to download COCO dataset
 # unzip # to download COCO dataset
 opencv-python 
-pillow <7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
+pillow==6.1 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
 pycocotools 
 PyQt5 # needed on KDE/Qt envs for matplotlib
