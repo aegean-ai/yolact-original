@@ -53,9 +53,9 @@ echo "Extracting train images into the image folder"
 tar xf ../train.tar.gz  --strip-components=1
 echo "Finished Extraction"
 
-#echo "Removing zip files"
-#rm ../test.tar.gz 
-#rm ../train.tar.gz
+echo "Removing zip files"
+rm ../test.tar.gz 
+rm ../train.tar.gz
 
 end=`date +%s`
 runtime=$((end-start))
