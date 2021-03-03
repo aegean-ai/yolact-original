@@ -128,6 +128,21 @@ dataset_base = Config({
     'label_map': None
 })
 
+# -------- DVRPC Dataset ---------- *
+dvrpc_dataset = dataset_base.copy({
+    'name': 'External Dataset',
+
+    # "/data/images" refers to the directory inside the docker container
+    'train_images': '/data/Train/images',
+    'train_info':   '/data/images/train.json',
+
+    'valid_images': '/data/images',
+    'valid_info':   '/data/images/test.json',
+
+    'has_gt': True,
+    'class_names': ('class1', 'class2', 'class3')
+})
+
 coco2014_dataset = dataset_base.copy({
     'name': 'COCO 2014',
     
@@ -805,6 +820,17 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
     }),
 })
 
+# -------- DVRPC Config ---------- *
+dvrpc_config = yolact_plus_resnet50_config.copy({
+    'name': 'External config',  # this name gets used for storing model files: NAME_XXX_YYY.pth
+    
+    # Dataset stuff
+    'dataset': dvrpc_dataset,  # references the above dataset via its variable name
+    'num_classes': 4,  # labels + 1 for background
+
+    'max_iter': 120000,
+    'lr_steps': (60000, 100000),
+})
 
 # Default config
 cfg = yolact_base_config.copy()
