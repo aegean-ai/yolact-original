@@ -133,14 +133,15 @@ dvrpc_dataset = dataset_base.copy({
     'name': 'External Dataset',
 
     # "/data/images" refers to the directory inside the docker container
-    'train_images': '/data/Train/images',
-    'train_info':   '/data/images/train.json',
+    'train_images': './data/dvrpc/images',
+    'train_info':   './data/dvrpc/annotations/instances_train2017.json',
 
-    'valid_images': '/data/images',
-    'valid_info':   '/data/images/test.json',
+    'valid_images': './data/dvrpc/images',
+    'valid_info':   './data/dvrpc/annotations/instances_val2017.json',
 
     'has_gt': True,
-    'class_names': ('class1', 'class2', 'class3')
+    #'class_names': ('class1', 'class2', 'class3')
+    'class_names': COCO_LABEL_MAP
 })
 
 coco2014_dataset = dataset_base.copy({
