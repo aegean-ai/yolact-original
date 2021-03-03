@@ -30,13 +30,9 @@ fi
 
 # Download the image data.
 cd ./images
-#echo "Downloading MSCOCO train images ..."
-#curl -LO http://images.cocodataset.org/zips/train2017.zip
 echo "Downloading MSCOCO train images from S3"
 aws s3 cp s3://cv.datasets.aegean.ai/mscoco/train2017.zip .
 
-#echo "Downloading MSCOCO val images ..."
-#curl -LO http://images.cocodataset.org/zips/val2017.zip
 echo "Downloading MSCOCO val images from S3"
 aws s3 cp s3://cv.datasets.aegean.ai/mscoco/val2017.zip .
 
@@ -49,12 +45,7 @@ fi
 
 # Download the annotation data.
 cd ./annotations
-#echo "Downloading MSCOCO train/val annotations ..."
-#curl -LO http://images.cocodataset.org/annotations/annotations_trainval2014.zip
-#curl -LO http://images.cocodataset.org/annotations/annotations_trainval2017.zip
-#echo "Finished downloading. Now extracting ..."
 echo "Downloading MSCOCO train/val annotations from s3" 
-# Skipping 2014 as there is no corresponding file in s3 
 aws s3 cp s3://cv.datasets.aegean.ai/mscoco/annotations_trainval2017.zip .
 echo "Finished downloading. Now extracting"
 
@@ -63,18 +54,12 @@ echo "Extracting train images ..."
 unzip -qqjd ../images ../images/train2017.zip
 echo "Extracting val images ..."
 unzip -qqjd ../images ../images/val2017.zip
-#echo "Extracting annotations ..."
-#Skipped as file isn't available
-#unzip -qqd .. ./annotations_trainval2014.zip
 unzip -qqd .. ./annotations_trainval2017.zip
 
 echo "Removing zip files ..."
 rm ../images/train2017.zip
 rm ../images/val2017.zip
-#Skipped as file isn't available
-#rm ./annotations_trainval2014.zip
 rm ./annotations_trainval2017.zip
-
 
 end=`date +%s`
 runtime=$((end-start))
