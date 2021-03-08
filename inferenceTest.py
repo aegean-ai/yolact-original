@@ -7,7 +7,7 @@ from yolact import Yolact
 
 #modelPath = 'weights/External config_0_10000.pth'
 #modelPath = 'weights/External config_1_20000.pth'
-modelPath = 'weights/config_2_25721_interrupt.pth'
+modelPath = 'weights/External config_2_25721_interrupt.pth'
 
 '''
 imgPaths = [
