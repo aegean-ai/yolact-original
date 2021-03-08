@@ -43,8 +43,8 @@ for img,label in zip(imgPaths,labelPaths):
 from yolact import Yolact
 
 #modelPath = 'weights/External config_0_10000.pth'
-#modelPath = 'weights/External config_1_20000.pth'
-modelPath = 'weights/External config_2_25721_interrupt.pth'
+modelPath = 'weights/External config_1_20000.pth'
+#modelPath = 'weights/External config_2_25721_interrupt.pth'
 
 imgPaths = [
     'data/dvrpc/images/1010_1_1.tif',
