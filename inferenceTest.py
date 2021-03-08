@@ -1,15 +1,10 @@
+'''
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import cv2
-from yolact import Yolact
 
-#modelPath = 'weights/External config_0_10000.pth'
-#modelPath = 'weights/External config_1_20000.pth'
-modelPath = 'weights/External config_2_25721_interrupt.pth'
-
-'''
 imgPaths = [
     'inferenceTestData/trainImgs/1010_1_1.tif',
     'inferenceTestData/trainImgs/1010_1_2.tif',
@@ -23,11 +18,9 @@ labelPaths = [
     'inferenceTestData/trainLabels/1010_1_4.tif',
 ]
 
-model = Yolact()
-weightsAndState = torch.load(modelPath, map_location=torch.device('cpu'))
-model.load_state_dict(weightsAndState)
-
-model.eval()
+def saveNPArr(arr, npArrPath):
+    with open(npArrPath, 'wb') as f:
+        np.save(f, np.array(arr), allow_pickle=True)
 
 def genLabelVis(label):
     labelVis = np.zeros_like(label)
@@ -44,12 +37,14 @@ for img,label in zip(imgPaths,labelPaths):
     predImg = pred(img)
     cv2.imshow('Image',img)
     cv2.imshow('Label',labelVis)
-    #cv2.imshow('Prediction',predImg)
     cv2.waitKey(0)
 '''
-def saveNPArr(arr, npArrPath):
-    with open(npArrPath, 'wb') as f:
-        np.save(f, np.array(arr), allow_pickle=True)
+
+from yolact import Yolact
+
+#modelPath = 'weights/External config_0_10000.pth'
+#modelPath = 'weights/External config_1_20000.pth'
+modelPath = 'weights/External config_2_25721_interrupt.pth'
 
 imgPaths = [
     'data/dvrpc/images/1010_1_1.tif',
@@ -57,16 +52,21 @@ imgPaths = [
     'data/dvrpc/images/1010_1_3.tif',
     'data/dvrpc/images/1010_1_4.tif',
 ]
+
+savePaths = [
+    'data/dvrpc/inferences/1010_1_1.tif',
+    'data/dvrpc/inferences/1010_1_2.tif',
+    'data/dvrpc/inferences/1010_1_3.tif',
+    'data/dvrpc/inferences/1010_1_4.tif',
+]
+
 predsSavePath = 'data/dvrpc/inferences/test.npy'
 
-model = Yolact()
-weightsAndState = torch.load(modelPath, map_location=torch.device('cpu'))
-model.load_state_dict(weightsAndState)
+net = Yolact()
+net.load_weights(modelPath)
+net.eval()
 
-imgs = [np.array(cv2.imread(img)) for img in imgPaths]
-
-preds = model.predict(imgs)
-saveNPArr(preds, predsSavePath)
-
-for pred in preds:
-    print('Prediction shape: ', pred.shape)
+import eval
+for imgPath,savePath in zip(imgPaths,savePaths):
+    print('Evaluating:',imgPath.split('/')[-1])
+    eval.evalimage(net=net, path=imgPath, save_path=savePath)
