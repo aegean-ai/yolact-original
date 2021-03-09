@@ -130,18 +130,17 @@ dataset_base = Config({
 
 # -------- DVRPC Dataset ---------- *
 dvrpc_dataset = dataset_base.copy({
-    'name': 'External Dataset',
+    'name': 'DPRVC Dataset',
 
     # "/data/images" refers to the directory inside the docker container
     'train_images': './data/dvrpc/images',
-    'train_info':   './data/dvrpc/annotations/instances_train2017.json',
+    'train_info':   './data/dvrpc/annotations/DVRPC_train.json',
 
     'valid_images': './data/dvrpc/images',
-    'valid_info':   './data/dvrpc/annotations/instances_val2017.json',
+    'valid_info':   './data/dvrpc/annotations/DVRPC_test.json',
 
     'has_gt': True,
-    #'class_names': ('class1', 'class2', 'class3')
-    'class_names': COCO_LABEL_MAP
+    'class_names': ('sidewalk')
 })
 
 coco2014_dataset = dataset_base.copy({
@@ -821,13 +820,26 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
     }),
 })
 
-# -------- DVRPC Config ---------- *
+
+# -------- DVRPC Config Resnet50 ---------- *
 dvrpc_config = yolact_plus_resnet50_config.copy({
-    'name': 'External config',  # this name gets used for storing model files: NAME_XXX_YYY.pth
+    'name': 'DVRPCResNet50',  # this name gets used for storing model files: NAME_XXX_YYY.pth
     
     # Dataset stuff
     'dataset': dvrpc_dataset,  # references the above dataset via its variable name
-    'num_classes': 4,  # labels + 1 for background
+    'num_classes': 2,  # labels + 1 for background
+
+    'max_iter': 120000,
+    'lr_steps': (60000, 100000),
+})
+
+# -------- DVRPC Config Resnet101 ---------- *
+dvrpc101_config = yolact_plus_base_config.copy({
+    'name': 'DVRPCResNet101',  # this name gets used for storing model files: NAME_XXX_YYY.pth
+    
+    # Dataset stuff
+    'dataset': dvrpc_dataset,  # references the above dataset via its variable name
+    'num_classes': 2,  # labels + 1 for background
 
     'max_iter': 120000,
     'lr_steps': (60000, 100000),
