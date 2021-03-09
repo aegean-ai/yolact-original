@@ -70,7 +70,7 @@ predsSavePath = 'data/dvrpc/inferences/test.npy'
 
 net = Yolact()
 #net.load_weights(modelPath)
-net.load_state_dict(torch.load(modelPath, strict=False))
+net.load_state_dict(torch.load(modelPath), strict=False)
 net.eval()
 
 import eval
