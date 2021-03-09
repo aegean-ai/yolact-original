@@ -1,9 +1,17 @@
-'''
 import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import cv2
+from yolact import Yolact
+'''
+#modelPath = 'weights/External config_0_10000.pth'
+#modelPath = 'weights/External config_1_20000.pth'
+modelPath = 'weights/External config_2_25721_interrupt.pth'
+
+device = torch.device('cpu')
+model = Yolact()
+model.load_state_dict(torch.load(PATH, map_location=device))
 
 imgPaths = [
     'inferenceTestData/trainImgs/1010_1_1.tif',
@@ -27,14 +35,12 @@ def genLabelVis(label):
     labelVis[label==1] = 255
     return(labelVis)
 
-#def pred(img):
-    #model.predict([img])
 
 for img,label in zip(imgPaths,labelPaths):
     img = np.array(cv2.imread(img))
     label = np.array(cv2.imread(label))
     labelVis = genLabelVis(label)
-    predImg = pred(img)
+    #predImg = pred(img)
     cv2.imshow('Image',img)
     cv2.imshow('Label',labelVis)
     cv2.waitKey(0)
@@ -63,7 +69,8 @@ savePaths = [
 predsSavePath = 'data/dvrpc/inferences/test.npy'
 
 net = Yolact()
-net.load_weights(modelPath)
+#net.load_weights(modelPath)
+net.load_state_dict(torch.load(modelPath, strict=False))
 net.eval()
 
 import eval
