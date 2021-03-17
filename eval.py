@@ -594,6 +594,7 @@ def badhash(x):
 
 def evalimage(net:Yolact, path:str, save_path:str=None):
     frame = torch.from_numpy(cv2.imread(path)).cuda().float()
+    #frame = torch.from_numpy(cv2.imread(path)).cpu().float() # non CUDA
     batch = FastBaseTransform()(frame.unsqueeze(0))
     preds = net(batch)
 
@@ -971,8 +972,10 @@ def evaluate(net:Yolact, dataset, train_mode=False):
                 else: fps = 0
                 progress = (it+1) / dataset_size * 100
                 progress_bar.set_val(it+1)
-                print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
-                    % (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
+                #print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
+                    #% (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
+                print('\rProcessing Images  %6d / %6d (%5.2f%%)    %5.2f fps        '
+                    % (it+1, dataset_size, progress, fps), end='')
 
 
 
