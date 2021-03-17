@@ -1,79 +1,64 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
 import numpy as np
+import json
+from pycocotools import mask
 import cv2
-from yolact import Yolact
-'''
-#modelPath = 'weights/External config_0_10000.pth'
-#modelPath = 'weights/External config_1_20000.pth'
-modelPath = 'weights/External config_2_25721_interrupt.pth'
 
-device = torch.device('cpu')
-model = Yolact()
-model.load_state_dict(torch.load(PATH, map_location=device))
+scoreThreshold = 0.0
+imgShape = (256,256)
 
-imgPaths = [
-    'inferenceTestData/trainImgs/1010_1_1.tif',
-    'inferenceTestData/trainImgs/1010_1_2.tif',
-    'inferenceTestData/trainImgs/1010_1_3.tif',
-    'inferenceTestData/trainImgs/1010_1_4.tif',
-]
-labelPaths = [
-    'inferenceTestData/trainLabels/1010_1_1.tif',
-    'inferenceTestData/trainLabels/1010_1_2.tif',
-    'inferenceTestData/trainLabels/1010_1_3.tif',
-    'inferenceTestData/trainLabels/1010_1_4.tif',
-]
+with open('data/dvrpc/inferences/masks/DVRPCResNet50.json') as f:
+    data = json.load(f)
 
-def saveNPArr(arr, npArrPath):
-    with open(npArrPath, 'wb') as f:
-        np.save(f, np.array(arr), allow_pickle=True)
+with open('data/dvrpc/annotations/DVRPC_test.json') as f:
+    inpImageData = json.load(f)
+    imgIDNameMap = {}
+    for img in inpImageData['images']:
+        imgIDNameMap[img['id']] = img['file_name']
+    del inpImageData
 
-def genLabelVis(label):
-    labelVis = np.zeros_like(label)
-    labelVis[label==1] = 255
-    return(labelVis)
+def genBinaryMasks(savePredImage=True, saveInputImage=True, saveOverlay=True, swapColors=True, printScore=False):
+    global imgData
+    global imgIDNameMap
+    n = 0
+    totScore = 0
+    for imgData in data['images']:
+        pred = np.zeros(imgShape)
+        for det in imgData['dets']:
+            if(det['score']>scoreThreshold):
+                n += 1
+                totScore += det['score']
+                rle = det['mask']
+                x = mask.decode(rle)
+                pred[x==1]=255
 
+        if(savePredImage):
+            cv2.imwrite('data/dvrpc/inferences/binaryMasks/%s.jpg'%(imgData['image_id']),pred)
 
-for img,label in zip(imgPaths,labelPaths):
-    img = np.array(cv2.imread(img))
-    label = np.array(cv2.imread(label))
-    labelVis = genLabelVis(label)
-    #predImg = pred(img)
-    cv2.imshow('Image',img)
-    cv2.imshow('Label',labelVis)
-    cv2.waitKey(0)
-'''
+        inpImg = None
+        if(saveInputImage):
+            inpImg = cv2.imread('data/dvrpc/images/%s'%(imgIDNameMap[imgData['image_id']]))
+            if(swapColors):
+                inpImg[:, :, [0, 1, 2]] = inpImg[:, :, [0, 2, 1]]
+                '''
+                0,1,2 #
+                1,0,2 #
+                2,0,1 #
+                0,2,1 # Close but still not correct
+                1,2,0 #
+                2,1,0 #
+                '''
+            cv2.imwrite('data/dvrpc/inferences/binaryMasks/%s_inpImg.jpg'%(imgData['image_id']),inpImg)
 
-from yolact import Yolact
+        if(saveOverlay):
+            if(inpImg is None):
+                overlayImg = cv2.imread('data/dvrpc/images/%s'%(imgIDNameMap[imgData['image_id']]))
+            else:
+                overlayImg = inpImg
+            overlayImg[pred==255]=(255,0,0)
+            cv2.imwrite('data/dvrpc/inferences/binaryMasks/%s_overlayImg.jpg'%(imgData['image_id']),overlayImg)
 
-#modelPath = 'weights/External config_0_10000.pth'
-modelPath = 'weights/External config_1_20000.pth'
-#modelPath = 'weights/External config_2_25721_interrupt.pth'
+    if(printScore):
+        print('Average score: %f'%(totScore/n))
 
-imgPaths = [
-    'data/dvrpc/images/1010_1_1.tif',
-    'data/dvrpc/images/1010_1_2.tif',
-    'data/dvrpc/images/1010_1_3.tif',
-    'data/dvrpc/images/1010_1_4.tif',
-]
-
-savePaths = [
-    'data/dvrpc/inferences/1010_1_1.tif',
-    'data/dvrpc/inferences/1010_1_2.tif',
-    'data/dvrpc/inferences/1010_1_3.tif',
-    'data/dvrpc/inferences/1010_1_4.tif',
-]
-
-predsSavePath = 'data/dvrpc/inferences/test.npy'
-
-net = Yolact()
-#net.load_weights(modelPath)
-net.load_state_dict(torch.load(modelPath), strict=False)
-net.eval()
-
-import eval
-for imgPath,savePath in zip(imgPaths,savePaths):
-    print('Evaluating:',imgPath.split('/')[-1])
-    eval.evalimage(net=net, path=imgPath, save_path=savePath)
+if __name__ == '__main__':
+    genBinaryMasks()
