@@ -1,12 +1,14 @@
 import os
 import traceback
 import sys
+import json
 
 config = {
     'pipeline':[],
     'verbose': 1,
     'ds':None,
-    'pef': 0.1 # [PrintEveryFactor] Determines after how much increase in the factor of completion of a process, a vbPrint is made. 0.1 means at every 10%, a print is made.
+    'pef': 0.1,
+    'score_threshold':0.15
 }
 
 def vbPrint(s):
@@ -22,8 +24,9 @@ def setConfig(argv):
     Adds steps to the pipelien if format is -<PipelineStep>
     '''
     argType = { # Default is str
-        'verbose':int,
-        'pef' : float
+        'verbose': int,
+        'pef' : float,
+        'score_threshold': float
     }
     global config
     argv = argv[1:]
@@ -91,7 +94,7 @@ def genImgPatches():
     tilesDir = '%s/tiles_%s'%(ds,ts)
     tiles = os.listdir(tilesDir)
     vbPrint('%i Tile files found in %s'%(len(tiles),tilesDir))
-    patchesDir = '%s/patches_%s'%(ds,ts)
+    patchesDir = '%s/imagePatches_%s'%(ds,ts)
     
     ## Making the dirs
     if(os.path.isdir(patchesDir)):
@@ -100,7 +103,7 @@ def genImgPatches():
         vbPrint('Making dir: %s'%(patchesDir))
         os.mkdir(patchesDir)
     
-    ## Creation of Image and Label patches
+    ## Creation of Image patches
     '''
     TODO
     - Each tile has to be split into 400 patches
@@ -116,60 +119,146 @@ def genImgPatches():
 
 '''
 INVESTIGATION NEEDED FOR genLabelPatches AND genAnnotations:
-    - We know that training uses images and annotations.json (and not the binary label rasters)
-    - How are the label raster patches being generated? Do we have label tiles ?
-    - If we have the tiles, can they be split in memory and their annotations made without having to save them into storage ?
+    - How to get the labels from the source (Find the source)
+    - How to make annotations from this
 '''
 def genLabelPatches():
     '''
     - Generates the label patches
     - For training only
     '''
+    ds = config['ds']
+    ts = config['ts']
+    labelPatchesDir = '%s/labelPatches_%s'%(ds,ts)
+    
+    ## Making the dirs
+    if(os.path.isdir(labelPatchesDir)):
+        vbPrint('Found dir: %s'%(labelPatchesDir))
+    else:
+        vbPrint('Making dir: %s'%(labelPatchesDir))
+        os.mkdir(labelPatchesDir)
+
+    ## Creation of Label patches
+    '''
+    TODO [Similar to generation of Image patches]
+    - Each tile has to be split into 400 patches
+    - The patches have to be saved in the [labelPatchesDir] directory
+    - The naming of the paches should be such that if we have the name of tile, we can generate the name of its patches
+      We could follow the format that has been used for year-1, it has been documented in the 'Formation of image patches'
+      section at docs.upabove.app/sidewalk/data-pipeline/_index.md. The names should map to their respective image patches
+    - Investigate and implement how to handle the world files
+    '''
+
     vbPrint('Label Patches made successfuly')
-    pass
 
 def genAnnotations():
     '''
-    - Generates the image and label annotations
+    - Generates the train and test annotations files
     - For training only
-    '''
-    vbPrint('Image and Label Annotations made successfuly')
-    pass
-
-############## POST TRAINING DATA PIPELINE FUNCTIONS #############
-
-'''
-Question: We dont need to merge images cause we already have the tiles right ?
-
-Idea:
-    Instead of first generating a large number of inferences and then merging them,
-    why dont we go tile by tile, making batch inferences for each of its 400 patches, and save it as the merged inference Tile?
-    We can always make individual inference patches with eval.py  
-'''
-
-def genInferenceTiles():
-    '''
-    For each tile, generate an inference for each of the patches
     '''
     ds = config['ds']
     ts = config['ts']
+    labelPatchesDir = '%s/annotations_%s'%(ds,ts)
+    
+    ## Making the dirs
+    if(os.path.isdir(labelPatchesDir)):
+        vbPrint('Found dir: %s'%(labelPatchesDir))
+    else:
+        vbPrint('Making dir: %s'%(labelPatchesDir))
+        os.mkdir(labelPatchesDir)
+
+    ## Creation of Train and Test annotation files
+    '''
+    TODO
+    - Generate the train and test annotation files using the images and labels.
+    - Check out the ML_Clip repo's czhUtils.py file. It seems they have made functions to generate the annotations.
+    '''
+
+    vbPrint('Annotations made successfuly')
+    pass
+
+############## POST TRAINING DATA PIPELINE FUNCTIONS #############
+def genInferenceJSON():
+    ds = config['ds']
+    ts = config['ts']
+
+    webDetPath = '%s/inferencesJSON_%s/'%(ds,ts)
+    if(os.path.isdir(webDetPath)):
+        vbPrint('Found dir: %s'%(webDetPath))
+    else:
+        vbPrint('Making dir: %s'%(webDetPath))
+        os.mkdir(webDetPath)
+
+    shCmd = 'python ../eval.py --trained_model="%s" \
+        --config=%s  --web_det_path="%s" \
+        --score_threshold=%f --top_k=15  --output_web_json --max_images=10'%( ## THe --max_images=10 is just there for debugging. Remove when done.
+            config['trained_model'],
+            config['config'],
+            'data/'+webDetPath,
+            config['score_threshold']
+        )
+
+    if(config['verbose']==0):
+        shCmd += ' --no_bar'
+
+    vbPrint('Initializing Inferences')
+    os.system(shCmd)
+    vbPrint('Inferences JSON created') 
+
+def genInferenceTiles():
+    '''
+    Make all inferences
+    For each tile, pick and merge an inference for each of its patches
+    '''
+    
+    ds = config['ds']
+    ts = config['ts']
+    inferenceTilesDir = '%s/inferenceTiles_%s'%(ds,ts)
+
+    ## Making the dirs
+    if(os.path.isdir(inferenceTilesDir)):
+        vbPrint('Found dir: %s'%(inferenceTilesDir))
+    else:
+        vbPrint('Making dir: %s'%(inferenceTilesDir))
+        os.mkdir(inferenceTilesDir)
+        
+    detFilePath = '%s/inferencesJSON_%s/%s'%(ds,ts,config['infJSON'])
+    annFilePath = '%s/annotations_%s/%s'%(ds,ts,config['annJSON'])
+
+    # Loads image IDs and their corresponding names into a HashMap
+    imgIDNameMap = {}
+    vbPrint('Indexing image ids from annotations')
+    with open(annFilePath) as f:
+        inpImageData = json.load(f)
+        for img in inpImageData['images']:
+            imgIDNameMap[img['id']] = img['file_name']
+        del inpImageData
+
     tilesDir = '%s/tiles_%s'%(ds,ts)
     tiles = os.listdir(tilesDir)
     vbPrint('%i Tile files found in %s'%(len(tiles),tilesDir))
 
-    tiles =[0]*2000
+    # DEBUG: SEE IF THIS FILE IS TOO BIG TO OPEN
+    vbPrint('Loading the inference JSON')
+    with open(detFilePath) as f:
+        infData = json.load(f)
+    
+    '''
+    TODO: Process each tile here and save them in inferenceTilesDir
+    - TO CONVERT RLE to Rasters check inferenceTest.py
+    '''
     n = len(tiles)
-
     printAtFactor = config['pef']
-
     for i,tile in enumerate(tiles):
         facComp = (i+1)/(n)
         if(facComp >= printAtFactor):
             vbPrint('Generating tile inferences: %i/%i %0.2f %%'%(i,n,100*facComp))
             printAtFactor += config['pef']
-
-            
-
+            '''
+            - Get all patches for the tile
+            - convert RLE to numpy raster
+            - merge these into a big np array and save
+            '''
 
     vbPrint('Inference Tiles generated Successfully')
 
@@ -178,16 +267,43 @@ if __name__ == '__main__':
     Argument Formats:
         --<KEY>=<VALUE>     -> Used to set config
         -<PipelineStep>     -> Used to set pipeline Steps
-    Argument keys:
-        --ds            -> [dataset name] The datset name. This will be used to create the file directory and refer to the dataset.
-        --ts            -> [tileset name] Name of the tileset. This will be used to create the unique tiles and images folder.
-                                          Separate tile and image folders are needed to separate training data from inference data.
-                                          This also allows speration of inference set. Ex of values for ts: train,test, XYZ_County_inference, PQR_Inference, etc.
-        --s3td          -> [s3 URL] The s3 URI of the input image tiles. Ex: s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/
-        -<PipelineStep> -> [Function Name] name of the function to call in the pipeline step. Multiple can be passed to create the pipeline.
-        --verbose       -> [0 or 1] Setting it to 1 allows print statements to run. Default: 1
-        --pef           -> [float] (Used for long processes) Determines after how much increase in the factor of completion of a process, a vbPrint is made. 
-                           For example: 0.1 means at every 10% completion, a print is made. (Only works if --verbose is set to 1). Default: 0.1
+
+    Base Arguments:
+        --ds                -> [dataset name] The datset name. This will be used to create the file directory and refer to the dataset.
+        --ts                -> [tileset name] Name of the tileset. This will be used to create the unique tiles and images folder.
+                                    Separate tile and image folders are needed to separate training data from inference data.
+                                    This also allows speration of inference set. Ex of values for ts: train,test, XYZ_County_inference, PQR_Inference, etc.
+        -<PipelineStep>     -> [Function Name] name of the function to call in the pipeline step. Multiple can be passed to create the pipeline.
+
+    LoadTiles Arguments:
+        --s3td              -> [s3 URL] The s3 URI of the input image tiles. Ex: s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/
+
+    genInferenceJSON Arguments:
+        --trained_model     -> [path] Path to the trained model. Ex: weights/DVRPCResNet50_8_88179_interrupt.pth
+        --config            -> [config name] name of the config to be used from config.py. Example dvrpc_config
+        --score_threshold   -> [float] The score threshold to use for inferences. Example: 0.0
+
+    genInferenceTiles Arguments:
+        --annJSON           -> [path] name of the annotations .JSON file. Example: DVRPC_test.json
+        --infJSON           -> [path] name of the created inference .JSON file. Example: DVRPCResNet50.json
+
+    Misc Arguments:
+        --verbose           -> [0 or 1] Setting it to 1 allows print statements to run. Default: 1
+        --pef               -> [float] (Used for long processes) Determines after how much increase in the factor of completion of a process, a vbPrint is made. 
+                                    For example: 0.1 means at every 10% completion, a print is made. (Only works if --verbose is set to 1). Default: 0.1
+
+    Examples:
+        - Training Pipeline
+            ```bash
+            python dataPipeline.py --ds=ds1 --ts=train -loadTiles --s3td=test -genImgPatches -genLabelPatches -genAnnotations
+            ```
+
+        - MEVP Pipeline
+            ```bash
+            python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgPatches -genAnnotations
+            python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
+            python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceTiles --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
+            ```
     '''
     setConfig(sys.argv)
     vbPrint('Configuration set:')
@@ -205,5 +321,4 @@ if __name__ == '__main__':
             vbPrint('Terminating')
             exit()
     vbPrint('------------------')
-
     vbPrint('Pipeline Completed')
