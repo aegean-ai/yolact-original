@@ -2,14 +2,21 @@ import os
 import traceback
 import sys
 import json
+import boto3
+import configparser
+from split_merge_tiff import Open_Tiff,Split_Tiff,Save_Tiff
+
 
 config = {
     'pipeline':[],
     'verbose': 1,
     'ds':None,
     'pef': 0.1,
-    'score_threshold':0.15
+    'score_threshold':0.15,
+    'fmts':'jpg,png',
+    'sfmt':'jpeg'
 }
+
 
 def vbPrint(s):
     '''
@@ -26,8 +33,9 @@ def setConfig(argv):
     argType = { # Default is str
         'verbose': int,
         'pef' : float,
-        'score_threshold': float
+        'score_threshold': float,
     }
+    
     global config
     argv = argv[1:]
     if('--verbose=0' in argv):
@@ -48,19 +56,54 @@ def setConfig(argv):
             traceback.print_exc()
             vbPrint('Bad Argument: %s'%(arg))
 
+def __getCredentials():
+    configParser = configparser.RawConfigParser()           
+    configFilePath = r'/home/ubuntu/.aws/credentials'      
+          
+    configParser.read(configFilePath)                      
+    configParser.sections()              
+
+    key_id = configParser.get('default','aws_access_key_id',raw=False) 
+    access_key = configParser.get('default','aws_secret_access_key',raw=False) 
+    token = configParser.get('default', 'aws_session_token',raw = False)
+    return key_id, access_key, token
+
+def __getS3bucket(bucketname):
+    
+
+    key_id,access_key,token = __getCredentials()
+
+    #Create Session: 
+    session = boto3.Session(aws_access_key_id = key_id,
+                            aws_secret_access_key = access_key,
+                            aws_session_token = token)
+
+    s3 = session.resource('s3')
+    bucket = s3.Bucket(bucketname)
+    
+    return bucket
+
+
 ############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
 
 def loadTiles():
     '''
     loads tiles data from s3 into the directory:
         - ./data/<datset>/tiles/
+        
+    bn (str): bucket name
+    s3Dir (str): bucket path to files
+    file_formats (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png']
+    
     '''
 
     ds = config['ds']
     ts = config['ts']
-    s3Dir = config['s3td']
+    bn = config['bn']                                                           #bucket name
+    s3Dir = config['s3td']                                                      #image path in bucket
+    file_formats = config['fmts'].replace(' ','').split(',')                    #convert string of file formats to list of formats
     loadDir = '%s/tiles_%s'%(ds,ts)
-
+    
     ## Making the dirs
     if(os.path.isdir(ds)):
         vbPrint('Found dir: %s'%(ds))
@@ -75,22 +118,43 @@ def loadTiles():
         os.mkdir(loadDir)
 
     ## Loading the data
+    bucket = __getS3bucket(bn)
+    
+    for s3_object in bucket.objects.filter(Prefix=s3Dir):
+        
+        path, filename = os.path.split(s3_object.key)
+
+        if '.' in filename:
+            image_format = filename.rsplit('.',1)[1].lower()
+        else:
+            image_format = 'no format'
+            
+        #Download the files
+        if image_format in file_formats:
+            vbPrint(f'path: {path}  |  file: {filename}  | type: {type(filename)}')
+            File = fr'{loadDir}/{filename}'
+            bucket.download_file(s3_object.key, File)
+            vbPrint(f'file: {filename} written successfuly')
+    
+    vbPrint('Tiles loaded succesfully')
     '''
-    TODO
-    - load all tiles from s3 [s3DIR] into the ec2 instance [loadDIr]
-    - This can be done by using boto3 for python or executing a shell script (with os.system()) and 'aws s3 sync'
-    - It is assumed that the selection of 500 tiles for training is done manually
+    #Example:
+    python3 dataPipeline.py --ds=dataset2 --ts=plTest --fmts=jpg,png --bn=cv.datasets.aegean.ai --s3td=njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadTiles
     '''
 
-    vbPrint('Tiles loaded succesfully')
+
 
 def genImgPatches():
     '''
     Generates image patches by splitting the tiles
     Prerequisite: loadTiles() has been run or tiles are present in the data/<dataset>/tiles directory
+    
+    save_fmt (str): save format. Exs: jpeg, png
+    
     '''
     ds = config['ds']
     ts = config['ts']
+    save_fmt = config['sfmt']
     tilesDir = '%s/tiles_%s'%(ds,ts)
     tiles = os.listdir(tilesDir)
     vbPrint('%i Tile files found in %s'%(len(tiles),tilesDir))
@@ -104,17 +168,37 @@ def genImgPatches():
         os.mkdir(patchesDir)
     
     ## Creation of Image patches
+    
+    for imageName in tiles:
+        imgage_Path = fr'{tilesDir}/{imageName}'                                    #Generate Image Path 
+        vbPrint(f'Current Image Path: {imgage_Path}')
+        
+        #Open File
+        array,profile = Open_Tiff(path_to_tiff = imgage_Path,
+                                  verbose = config['verbose'])
+                
+        #SplitTiff:
+        split_array = Split_Tiff(image=array,
+                                blockX = 256,
+                                blockY = 256,
+                                minScrapPercent = 0,
+                                verbose = config['verbose'])
+        
+        
+        #Save Image Patches:
+        Save_Tiff(array=split_array,
+                  save_directory=patchesDir,
+                  image_index=imageName,
+                  profile = profile,
+                  save_fmt = save_fmt,
+                  verbose = config['verbose'])
+                  
+       
+    vbPrint('Image Patches made successfuly')    
     '''
-    TODO
-    - Each tile has to be split into 400 patches
-    - The patches have to be saved in the [patchesDir] directory
-    - The naming of the paches should be such that if we have the name of tile, we can generate the name of its patches
-      We could follow the format that has been used for year-1, it has been documented in the 'Formation of image patches'
-      section at docs.upabove.app/sidewalk/data-pipeline/_index.md
-    - Investigate and implement how to handle the world files
+    #Example:
+    python3 dataPipeline.py --ds=dataset2 --ts=plTest  --sfmt=jpg -genImgPatches
     '''
-
-    vbPrint('Image Patches made successfuly')
 
 
 '''
