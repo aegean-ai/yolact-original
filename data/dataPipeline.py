@@ -70,7 +70,6 @@ def __getCredentials():
 
 def __getS3bucket(bucketname):
     
-
     key_id,access_key,token = __getCredentials()
 
     #Create Session: 
@@ -263,22 +262,25 @@ def genAnnotations():
 
 ############## POST TRAINING DATA PIPELINE FUNCTIONS #############
 def genInferenceJSON():
+    '''
+    - Generates inferences and saves the sidewalk detections (Dets) in a JSON file
+    '''
     ds = config['ds']
     ts = config['ts']
 
-    webDetPath = '%s/inferencesJSON_%s/'%(ds,ts)
-    if(os.path.isdir(webDetPath)):
-        vbPrint('Found dir: %s'%(webDetPath))
+    detPath = '%s/inferencesJSON_%s/'%(ds,ts)
+    if(os.path.isdir(detPath)):
+        vbPrint('Found dir: %s'%(detPath))
     else:
-        vbPrint('Making dir: %s'%(webDetPath))
-        os.mkdir(webDetPath)
+        vbPrint('Making dir: %s'%(detPath))
+        os.mkdir(detPath)
 
     shCmd = 'python ../eval.py --trained_model="%s" \
         --config=%s  --web_det_path="%s" \
         --score_threshold=%f --top_k=15  --output_web_json --max_images=10'%( ## THe --max_images=10 is just there for debugging. Remove when done.
             config['trained_model'],
             config['config'],
-            'data/'+webDetPath,
+            'data/'+detPath,
             config['score_threshold']
         )
 
@@ -287,10 +289,11 @@ def genInferenceJSON():
 
     vbPrint('Initializing Inferences')
     os.system(shCmd)
-    vbPrint('Inferences JSON created') 
+    vbPrint('Inferences JSON created')
 
 def genInferenceTiles():
     '''
+    Prerequisite: genInferenceJSON() has been run and the Dets JSON is available in ./<datset>/inferenceTiles_<tileset>/
     Make all inferences
     For each tile, pick and merge an inference for each of its patches
     '''
@@ -388,6 +391,17 @@ if __name__ == '__main__':
             python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
             python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceTiles --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
             ```
+
+
+    The complete Pipeline:
+        ### Data Pipeline
+        - loadTiles
+        - genImgPatches
+        - genLabelPatches
+        - genAnnotations
+        ### MEVP Pipeline
+        - genInferenceJSON
+        - genInferenceTiles
     '''
     setConfig(sys.argv)
     vbPrint('Configuration set:')
