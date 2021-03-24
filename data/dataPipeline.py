@@ -481,13 +481,15 @@ if __name__ == '__main__':
 
     The complete Pipeline:
         ### Data Pipeline
-        - loadTiles
-        - genImgPatches
-        - genLabelPatches
-        - genAnnotations
+        - loadTiles - John
+        - genImgPatches - John
+        - genLabelPatches - TODO -> ARCGIS
+        - genAnnotations - TODO  -> ARCGIS 
         ### MEVP Pipeline
-        - genInferenceJSON
-        - genInferenceTiles
+        - genInferenceJSON - Done
+        - genInferenceTiles - Done
+        - Vectorize - TODO -> Rasterio or PyQGIS or ArcPy (Licensing)
+        - Cleaning and Metrics
     '''
     setConfig(sys.argv)
     vbPrint('Configuration set:')
