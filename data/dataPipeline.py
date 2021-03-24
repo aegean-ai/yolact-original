@@ -5,18 +5,26 @@ import json
 import boto3
 import configparser
 from split_merge_tiff import Open_Tiff,Split_Tiff,Save_Tiff
-
+from pycocotools import mask
+import numpy as np
+import cv2
 
 config = {
     'pipeline':[],
     'verbose': 1,
     'ds':None,
     'pef': 0.1,
-    'score_threshold':0.15,
+    'score_threshold':0.0,
+    'det_score_threshold':0.0,
     'fmts':'jpg,png',
-    'sfmt':'jpeg'
+    'sfmt':'jpeg',
+    'rowsSplitPerTile':20,
+    'colsSplitPerTile':20,
+    'patchDimX':256,
+    'patchDimY':256,
+    'tileDimX':5000,
+    'tileDimY':5000
 }
-
 
 def vbPrint(s):
     '''
@@ -34,6 +42,11 @@ def setConfig(argv):
         'verbose': int,
         'pef' : float,
         'score_threshold': float,
+        'det_score_threshold':float,
+        'rowsSplitPerTile':int,
+        'colsSplitPerTile':int,
+        'patchDimX':int,
+        'patchDimY':int
     }
     
     global config
@@ -264,6 +277,7 @@ def genAnnotations():
 def genInferenceJSON():
     '''
     - Generates inferences and saves the sidewalk detections (Dets) in a JSON file
+    - This works on the data mentioned in the selected configuration from config.py
     '''
     ds = config['ds']
     ts = config['ts']
@@ -275,9 +289,9 @@ def genInferenceJSON():
         vbPrint('Making dir: %s'%(detPath))
         os.mkdir(detPath)
 
-    shCmd = 'python ../eval.py --trained_model="%s" \
+    shCmd = 'cd .. && python eval.py --trained_model="%s" \
         --config=%s  --web_det_path="%s" \
-        --score_threshold=%f --top_k=15  --output_web_json --max_images=10'%( ## THe --max_images=10 is just there for debugging. Remove when done.
+        --score_threshold=%f --top_k=15  --output_web_json'%(
             config['trained_model'],
             config['config'],
             'data/'+detPath,
@@ -289,7 +303,7 @@ def genInferenceJSON():
 
     vbPrint('Initializing Inferences')
     os.system(shCmd)
-    vbPrint('Inferences JSON created')
+    vbPrint('Completed')
 
 def genInferenceTiles():
     '''
@@ -297,12 +311,11 @@ def genInferenceTiles():
     Make all inferences
     For each tile, pick and merge an inference for each of its patches
     '''
-    
     ds = config['ds']
     ts = config['ts']
     inferenceTilesDir = '%s/inferenceTiles_%s'%(ds,ts)
 
-    ## Making the dirs
+    # Making the dirs
     if(os.path.isdir(inferenceTilesDir)):
         vbPrint('Found dir: %s'%(inferenceTilesDir))
     else:
@@ -310,42 +323,116 @@ def genInferenceTiles():
         os.mkdir(inferenceTilesDir)
         
     detFilePath = '%s/inferencesJSON_%s/%s'%(ds,ts,config['infJSON'])
-    annFilePath = '%s/annotations_%s/%s'%(ds,ts,config['annJSON'])
+    #annFilePath = '%s/annotations_%s/%s'%(ds,ts,config['annJSON'])
+    annFilePath = '%s/annotations/%s'%(ds,config['annJSON']) # For testing. Can be reverted once the data-pipeline part is completed.
 
-    # Loads image IDs and their corresponding names into a HashMap
-    imgIDNameMap = {}
-    vbPrint('Indexing image ids from annotations')
+    # Generates a HashMap that stores the image tiles information
+    # The program iterates through this to generate each tile
+    tileMap = dict()
+    vbPrint('Loading the annotations JSON')
     with open(annFilePath) as f:
         inpImageData = json.load(f)
         for img in inpImageData['images']:
-            imgIDNameMap[img['id']] = img['file_name']
+            tile,i,j =  img['file_name'].split('.')[0].split('_')
+            if(tile not in tileMap):
+                tileMap[tile] = []
+            tileMap[tile].append((img['id'],int(i),int(j)))
         del inpImageData
+    
+    vbPrint('Generated information for %i tiles'%(len(tileMap.keys())))
 
-    tilesDir = '%s/tiles_%s'%(ds,ts)
-    tiles = os.listdir(tilesDir)
-    vbPrint('%i Tile files found in %s'%(len(tiles),tilesDir))
-
-    # DEBUG: SEE IF THIS FILE IS TOO BIG TO OPEN
     vbPrint('Loading the inference JSON')
     with open(detFilePath) as f:
-        infData = json.load(f)
+        infData = json.load(f)['images']
     
-    '''
-    TODO: Process each tile here and save them in inferenceTilesDir
-    - TO CONVERT RLE to Rasters check inferenceTest.py
-    '''
-    n = len(tiles)
-    printAtFactor = config['pef']
-    for i,tile in enumerate(tiles):
+    
+    patchShape = (config['patchDimX'],config['patchDimY'])
+    infTileShape = (patchShape[0]*config['colsSplitPerTile'],
+                    patchShape[1]*config['rowsSplitPerTile'])
+
+    vbPrint('Expected Patch dimensions: %ix%i'%(patchShape[0],patchShape[1]))
+    vbPrint('Expected Tiles dimensions: %ix%i'%(infTileShape[0],infTileShape[1]))
+
+    # Creating a hashmap for the image dets with the image ids as keys
+    # Each prediction is a merged image of many detections
+    # Only detections above the threshold are selected to be merged
+    vbPrint('Generating det masks with a threshold of %0.2f'%(config['det_score_threshold']))
+    infPatchMap = dict()
+    i=0
+    n=len(infData)
+    peFactor = config['pef']
+    
+    for img in infData:
+        i += 1
+        pred = np.zeros(patchShape)
+        for det in img['dets']:
+            if(det['score']>config['det_score_threshold']):
+                detMask = mask.decode(det['mask'])
+                pred[detMask==1]=255
+        
+        infPatchMap[img['image_id']] = pred
+
+        # Prints progress at every 'pef' factor of completion
+        # PEF stands for 'Print-Every factor'
         facComp = (i+1)/(n)
-        if(facComp >= printAtFactor):
-            vbPrint('Generating tile inferences: %i/%i %0.2f %%'%(i,n,100*facComp))
-            printAtFactor += config['pef']
-            '''
-            - Get all patches for the tile
-            - convert RLE to numpy raster
-            - merge these into a big np array and save
-            '''
+        if(facComp >= peFactor):
+            vbPrint('Generating detection masks: %i/%i\t%0.2f %%'%(i+1,n,100*facComp))
+            peFactor += config['pef']
+
+    del infData
+    
+    vbPrint('Detection Masks made')
+    vbPrint('Generating inference tiles from detection masks')
+
+    # Rows and columns a tile is split into.
+    # Default is 20,20
+    rows = config['rowsSplitPerTile']
+    cols = config['colsSplitPerTile']
+
+    i = 0
+    n = len(tileMap.keys())
+    peFactor = config['pef']
+
+    '''
+    For each tile, gets the detection masks and merges them into one image.
+    It seems that many patches are missing in inferences. It is assumed these don't have any detections and are skipped.
+    '''
+    for i,tile in enumerate(tileMap.keys()):
+        # Skipping tile if unexpected number of patches exist for the tile in the annotations JSON
+        expectedPatches = rows*cols
+        if(len(tileMap[tile])!=expectedPatches):
+            vbPrint('Found %i patches for tile %s. Skipping'%(len(tileMap[tile]), tile))
+        else:
+            # The inference tile. Initialized with 0. Masks are overlayed at their respective locations.
+            infTile = np.zeros((rows*patchShape[0],cols*patchShape[1]),dtype=np.uint8)
+            for patchID,row,col in tileMap[tile]:
+                # Overlays the patch mask at the correct location in infTile
+                # Skip any patches with no inference. It is assumed that no inference data is generated for patches with 0 detections.
+                if(patchID in infPatchMap):
+                    # Cropshift is the extra pixels to the left and top in the final row and column of the image inference
+                    # This is only done due to the way the year-1 project was 'padded'.
+                    # This will be need to be removed when correct padding is applied.
+                    cropShiftX = 0
+                    cropShiftY = 0
+                    if(row==rows):
+                        cropShiftX = 120
+                    if(col==cols):
+                        cropShiftY = 120
+                    infTile[(row-1)*patchShape[0]:((row)*patchShape[0])-cropShiftX, (col-1)*patchShape[1]:((col)*patchShape[1])-cropShiftY] = infPatchMap[patchID][cropShiftX:,cropShiftY:]
+            
+            # Cropping image into the final tile dimension
+            infTile = infTile[:config['tileDimX'],:config['tileDimY']]
+            
+            # Writing the image tile
+            # File format kept as png because it has lossless compression and to work well with rasterio if needed.
+            cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
+
+            # Prints progress at every 'pef' factor of completion
+            # PEF stands for 'Print-Every factor'
+            facComp = (i+1)/(n)
+            if(facComp >= peFactor):
+                vbPrint('Generating inferences tile: %i/%i\t%0.2f %%'%(i+1,n,100*facComp))
+                peFactor += config['pef']
 
     vbPrint('Inference Tiles generated Successfully')
 
@@ -391,7 +478,6 @@ if __name__ == '__main__':
             python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
             python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceTiles --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
             ```
-
 
     The complete Pipeline:
         ### Data Pipeline
