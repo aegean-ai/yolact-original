@@ -21,24 +21,27 @@ import sys
 import json
 import boto3
 import configparser
-<<<<<<< HEAD
 from split_merge_raster import Open_Raster,Split_Raster,Save_Patches            #These are all called w/in genImgPatches
 import time                                                                     #used in decorator __time_this()
-=======
-from split_merge_tiff import Open_Tiff,Split_Tiff,Save_Tiff
+
 from pycocotools import mask
 import numpy as np
 import cv2
->>>>>>> 18ad45b781203679705078ccb6956d9f6a24213c
 
 config = {
     'pipeline':[],
     'verbose': 1,
     'ds':None,
-    'pef': 0.1,
-<<<<<<< HEAD
+    'pef': 0.1,    
+    'score_threshold':0.0,
+    'det_score_threshold':0.0,
+    'rowsSplitPerTile':20,
+    'colsSplitPerTile':20,
+    'patchDimX':256,
+    'patchDimY':256,
+    'tileDimX':5000,
+    'tileDimY':5000,
     'mWH': '5000,5000',
-    'score_threshold':0.15,
     'fmts':'jpg,png,tif',
     'sfmt':'jpeg'
 }
@@ -158,20 +161,8 @@ def __time_this(func):                                                          
 
 ############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
 
-=======
-    'score_threshold':0.0,
-    'det_score_threshold':0.0,
-    'fmts':'jpg,png',
-    'sfmt':'jpeg',
-    'rowsSplitPerTile':20,
-    'colsSplitPerTile':20,
-    'patchDimX':256,
-    'patchDimY':256,
-    'tileDimX':5000,
-    'tileDimY':5000
-}
 
->>>>>>> 18ad45b781203679705078ccb6956d9f6a24213c
+
 def vbPrint(s):
     '''
     prints only if verbose is configured to 1
