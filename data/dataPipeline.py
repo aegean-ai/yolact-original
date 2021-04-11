@@ -19,8 +19,7 @@ import os
 import traceback
 import sys
 import json
-import boto3
-import configparser
+from s3_helper import load_s3_to_local
 from split_merge_raster import Open_Raster,Split_Raster,Save_Patches            #These are all called w/in genImgPatches
 import time                                                                     #used in decorator __time_this()
 
@@ -48,32 +47,6 @@ config = {
 
 ############## Helper Functions #############
 
-def __getCredentials():
-    configParser = configparser.RawConfigParser()           
-    configFilePath = r'/home/ubuntu/.aws/credentials'      
-          
-    configParser.read(configFilePath)                      
-    configParser.sections()              
-
-    key_id = configParser.get('default','aws_access_key_id',raw=False) 
-    access_key = configParser.get('default','aws_secret_access_key',raw=False) 
-    token = configParser.get('default', 'aws_session_token',raw = False)
-    return key_id, access_key, token
-
-
-def __getS3bucket(bucketname:str):
-    
-    key_id,access_key,token = __getCredentials()
-
-    #Create Session: 
-    session = boto3.Session(aws_access_key_id = key_id,
-                            aws_secret_access_key = access_key,
-                            aws_session_token = token)
-
-    s3 = session.resource('s3')
-    bucket = s3.Bucket(bucketname)
-    
-    return bucket
 
 def __listdir(directory:str,extensions:list)->list:                             #list files with specified extensions (filter for tif/png/jpeg etc)
     
@@ -99,28 +72,6 @@ def __make_folders(rootfolder:str,subfolder:str)->None:
         vbPrint('Making dir: %s'%(subfolder))
         os.mkdir(subfolder)
     
-
-def __loadS3_to_local(s3_bucket,s3_directory:str,desired_formats:list,load_dir:str)->None:      #this function is called in loadFiles()
-    
-    for s3_object in s3_bucket.objects.filter(Prefix=s3_directory):                             #iterates through files in desired directory of S3 bucket
-        
-        path, filename = os.path.split(s3_object.key)                                           #Seperate out filename from object name (string)
-
-        if '.' in filename:                                                                     #Finds file extension 
-            image_format = filename.rsplit('.',1)[1].lower()
-        else:
-            image_format = 'no format'
-            
-                                                                                    ##Download the files
-        if (image_format in desired_formats) or ('all' in desired_formats):         #Retrieve files with desired file formats
-            vbPrint(f'path: {path}  |  file: {filename}  | type: {type(filename)}') #print info about file
-            Filepath = fr'{load_dir}/{filename}'                                    #create local file path
-            try:
-                s3_bucket.download_file(s3_object.key, Filepath)                    #downloads S3object into (local) folder w/ File
-                vbPrint(f'file: {filename} created successfully')                   #print success message
-            except:
-                vbPrint(f'file: {filename} could not load successfully')
- 
 
           
 def __getWindow(window_config:str):                                             #Called in genImgPatches()
@@ -214,7 +165,7 @@ def loadFiles():
     loads world data from s3 into the directory:
         - ./data/<dataset>/world_<fileset>/
         
-    bn (str): bucket name
+    
     s3Dir (str): bucket path to files
     file_formats (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png']
     
@@ -222,8 +173,8 @@ def loadFiles():
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset string. root folder of files
     fs = config['fs']                                                           #fileset string. folder to hold world files
-    bn = config['bn']                                                           #bucket name
-    s3Dir = config['s3td']                                                      #file path in bucket (s3 target directory)
+    s3Dir = config['s3td']                                                      #AWS URI for folder located in S3 bucket 
+    
     file_formats = config['fmts'].lower().replace(' ','').split(',')            #convert string of file formats to list of formats
     loadDir = '%s/world_%s'%(ds,fs)                                             #root folder + subfolder
     
@@ -234,23 +185,22 @@ def loadFiles():
 
     ##----------------------------Load Files------------------------------------##
                                                                                 ##Retrieve aws bucket object                     
-    s3bucket = __getS3bucket(bn)                                                #S3 Bucket access. Uses boto3 + local aws credentials to access bucket, 
+    #s3bucket = __getS3bucket(bn)                                                #S3 Bucket access. Uses boto3 + local aws credentials to access bucket, 
     
-    __loadS3_to_local(s3_bucket=s3bucket,
-                      s3_directory=s3Dir,
-                      desired_formats=file_formats,
-                      load_dir=loadDir)
+    
+    load_s3_to_local(s3_uri=s3Dir,
+                     desired_formats=file_formats,
+                     load_dir=loadDir,
+                     verbose=config['verbose'])
     
     
     vbPrint('Loading World file(s) Completed')
     
     '''
     #Examples:
-    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/
-    python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=all --bn=cv.datasets.aegean.ai --s3td=njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
+    python3 dataPipeline.py --ds=dataset6 --fs=inputs --fmts=all --s3td=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
     
-    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/
-    python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=all --bn=cv.datasets.aegean.ai --s3td=njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
+    python3 dataPipeline.py --ds=dataset6 --fs=inputs --fmts=all --s3td=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
     
     '''
 
