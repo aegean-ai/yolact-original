@@ -323,7 +323,7 @@ def genImgPatches():
                                                                                 ##Save Image Patches:
             Save_Patches(array=split_array,                                     #split tile containing patches
                          save_directory=patchesDir,                             #folder location to save patches in 
-                         image_index=tile_name,                                 #patches will be named as: tileName_tileXpos_tileYpos_patchXpos_patchYpos
+                         tile_name=tile_name,                                 #patches will be named as: tileName_tileXpos_tileYpos_patchXpos_patchYpos
                          profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
                          save_fmt = save_fmt,                                   #format to save patches as (ex: png,jpeg,geoTiff) 
                          verbose = config['verbose'])
