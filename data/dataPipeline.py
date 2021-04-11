@@ -1,22 +1,154 @@
+"""
+Important Definitions:
+    > World-File/World-Image: This is any input image of arbitrary size that must be broken down into patches.
+    > Tile-Image: This is any subdivision of a World-Image that is not a patch. The default is 5000x5000 but can be changed
+    > Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded as 256x256
+    
+    > Input world-image: this is(are) the world files at the start of the pipeline
+    > Label world-image: this is(are) the world files representing the sidewalks(labels) for training
+    
+    
+Workflow:
+    loadFiles (world inputs/labels) -> genImgPatches (inputs/labels) ->... 
+                                            |__ Open_Raster > Split_Raster > Save_Patches
+
+"""
+############## Imports/Setup #############
+
 import os
 import traceback
 import sys
 import json
 import boto3
 import configparser
-from split_merge_tiff import Open_Tiff,Split_Tiff,Save_Tiff
-
+from split_merge_raster import Open_Raster,Split_Raster,Save_Patches            #These are all called w/in genImgPatches
+import time                                                                     #used in decorator __time_this()
 
 config = {
     'pipeline':[],
     'verbose': 1,
     'ds':None,
     'pef': 0.1,
+    'mWH': '5000,5000',
     'score_threshold':0.15,
-    'fmts':'jpg,png',
+    'fmts':'jpg,png,tif',
     'sfmt':'jpeg'
 }
 
+############## Helper Functions #############
+
+def __getCredentials():
+    configParser = configparser.RawConfigParser()           
+    configFilePath = r'/home/ubuntu/.aws/credentials'      
+          
+    configParser.read(configFilePath)                      
+    configParser.sections()              
+
+    key_id = configParser.get('default','aws_access_key_id',raw=False) 
+    access_key = configParser.get('default','aws_secret_access_key',raw=False) 
+    token = configParser.get('default', 'aws_session_token',raw = False)
+    return key_id, access_key, token
+
+
+def __getS3bucket(bucketname:str):
+    
+    key_id,access_key,token = __getCredentials()
+
+    #Create Session: 
+    session = boto3.Session(aws_access_key_id = key_id,
+                            aws_secret_access_key = access_key,
+                            aws_session_token = token)
+
+    s3 = session.resource('s3')
+    bucket = s3.Bucket(bucketname)
+    
+    return bucket
+
+def __listdir(directory:str,extensions:list)->list:                             #list files with specified extensions (filter for tif/png/jpeg etc)
+    
+    Files = os.listdir(directory)                                               #list all files
+    files = []
+    for file in Files:
+        if (file.lower().rsplit('.',1)[1] in extensions) or ('all' in extensions):      #find extension and check membership in requested 
+            files.append(file)
+    
+    return files                                                                #return file names that match requested extensions
+    
+def __make_folders(rootfolder:str,subfolder:str)->None:
+    ## Making the dirs
+    if(os.path.isdir(rootfolder)):                                              #Make/check for Root directory 
+        vbPrint('Found dir: %s'%(rootfolder))
+    else:
+        vbPrint('Making dir: %s'%(rootfolder))
+        os.mkdir(rootfolder)
+
+    if(os.path.isdir(subfolder)):                                               #Make/check for world subfolder
+        vbPrint('Found dir: %s'%(subfolder))
+    else:
+        vbPrint('Making dir: %s'%(subfolder))
+        os.mkdir(subfolder)
+    
+
+def __loadS3_to_local(s3_bucket,s3_directory:str,desired_formats:list,load_dir:str)->None:      #this function is called in loadFiles()
+    
+    for s3_object in s3_bucket.objects.filter(Prefix=s3_directory):                             #iterates through files in desired directory of S3 bucket
+        
+        path, filename = os.path.split(s3_object.key)                                           #Seperate out filename from object name (string)
+
+        if '.' in filename:                                                                     #Finds file extension 
+            image_format = filename.rsplit('.',1)[1].lower()
+        else:
+            image_format = 'no format'
+            
+                                                                                    ##Download the files
+        if (image_format in desired_formats) or ('all' in desired_formats):         #Retrieve files with desired file formats
+            vbPrint(f'path: {path}  |  file: {filename}  | type: {type(filename)}') #print info about file
+            Filepath = fr'{load_dir}/{filename}'                                    #create local file path
+            try:
+                s3_bucket.download_file(s3_object.key, Filepath)                    #downloads S3object into (local) folder w/ File
+                vbPrint(f'file: {filename} created successfully')                   #print success message
+            except:
+                vbPrint(f'file: {filename} could not load successfully')
+ 
+
+          
+def __getWindow(window_config:str):                                             #Called in genImgPatches()
+    """
+    Note:
+        parses window_config to get height and width as integers
+    
+    Inputs:
+        window_config (str): string of window height and width. Example: '5000,5000'
+    
+    Outputs:
+        window (dict): dictionary containing ax:dim pairs
+        
+    """
+    dims = window_config.split(',',1)
+    axis = ('width','height')
+    window = {ax:int(dim) for (ax,dim) in zip(axis,dims)} 
+    return window
+  
+def __time_this(func):                                                          #Currently used on loadFiles & genImgPatches
+    
+    def __wrapper(*args,**kwargs):
+        start = time.perf_counter()
+        result = func(*args,**kwargs)
+        end = time.perf_counter()
+        
+        delta = end-start
+        ms = round((delta%1)*1000,2)
+        
+        ty_res = time.gmtime(delta)
+        res = f"{time.strftime('h:%H m:%M s:%S',ty_res)} ms:{ms}"
+        vbPrint(f'{func.__name__} took: {res}')
+        
+        if result is not None:
+            return result
+    
+    return __wrapper
+
+############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
 
 def vbPrint(s):
     '''
@@ -55,184 +187,150 @@ def setConfig(argv):
         except:
             traceback.print_exc()
             vbPrint('Bad Argument: %s'%(arg))
+            
+            
 
-def __getCredentials():
-    configParser = configparser.RawConfigParser()           
-    configFilePath = r'/home/ubuntu/.aws/credentials'      
-          
-    configParser.read(configFilePath)                      
-    configParser.sections()              
-
-    key_id = configParser.get('default','aws_access_key_id',raw=False) 
-    access_key = configParser.get('default','aws_secret_access_key',raw=False) 
-    token = configParser.get('default', 'aws_session_token',raw = False)
-    return key_id, access_key, token
-
-def __getS3bucket(bucketname):
-    
-    key_id,access_key,token = __getCredentials()
-
-    #Create Session: 
-    session = boto3.Session(aws_access_key_id = key_id,
-                            aws_secret_access_key = access_key,
-                            aws_session_token = token)
-
-    s3 = session.resource('s3')
-    bucket = s3.Bucket(bucketname)
-    
-    return bucket
-
-
-############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
-
-def loadTiles():
+@__time_this
+def loadFiles():
     '''
-    loads tiles data from s3 into the directory:
-        - ./data/<datset>/tiles/
+    loads world data from s3 into the directory:
+        - ./data/<dataset>/world_<fileset>/
         
     bn (str): bucket name
     s3Dir (str): bucket path to files
     file_formats (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png']
     
     '''
-
-    ds = config['ds']
-    ts = config['ts']
+    ##----------------------------Configuration/Setup---------------------------##
+    ds = config['ds']                                                           #dataset string. root folder of files
+    fs = config['fs']                                                           #fileset string. folder to hold world files
     bn = config['bn']                                                           #bucket name
-    s3Dir = config['s3td']                                                      #image path in bucket
-    file_formats = config['fmts'].replace(' ','').split(',')                    #convert string of file formats to list of formats
-    loadDir = '%s/tiles_%s'%(ds,ts)
+    s3Dir = config['s3td']                                                      #file path in bucket (s3 target directory)
+    file_formats = config['fmts'].lower().replace(' ','').split(',')            #convert string of file formats to list of formats
+    loadDir = '%s/world_%s'%(ds,fs)                                             #root folder + subfolder
     
-    ## Making the dirs
-    if(os.path.isdir(ds)):
-        vbPrint('Found dir: %s'%(ds))
-    else:
-        vbPrint('Making dir: %s'%(ds))
-        os.mkdir(ds)
+    vbPrint('Load File(s) Starting...')
+                                                                                
+    __make_folders(rootfolder=ds,                                               ## Making the dirs
+                   subfolder=loadDir)                                           #method for making project rootfolder/subfolders
 
-    if(os.path.isdir(loadDir)):
-        vbPrint('Found dir: %s'%(loadDir))
-    else:
-        vbPrint('Making dir: %s'%(loadDir))
-        os.mkdir(loadDir)
-
-    ## Loading the data
-    bucket = __getS3bucket(bn)
+    ##----------------------------Load Files------------------------------------##
+                                                                                ##Retrieve aws bucket object                     
+    s3bucket = __getS3bucket(bn)                                                #S3 Bucket access. Uses boto3 + local aws credentials to access bucket, 
     
-    for s3_object in bucket.objects.filter(Prefix=s3Dir):
-        
-        path, filename = os.path.split(s3_object.key)
-
-        if '.' in filename:
-            image_format = filename.rsplit('.',1)[1].lower()
-        else:
-            image_format = 'no format'
-            
-        #Download the files
-        if image_format in file_formats:
-            vbPrint(f'path: {path}  |  file: {filename}  | type: {type(filename)}')
-            File = fr'{loadDir}/{filename}'
-            bucket.download_file(s3_object.key, File)
-            vbPrint(f'file: {filename} written successfuly')
+    __loadS3_to_local(s3_bucket=s3bucket,
+                      s3_directory=s3Dir,
+                      desired_formats=file_formats,
+                      load_dir=loadDir)
     
-    vbPrint('Tiles loaded succesfully')
+    
+    vbPrint('Loading World file(s) Completed')
+    
     '''
-    #Example:
-    python3 dataPipeline.py --ds=dataset2 --ts=plTest --fmts=jpg,png --bn=cv.datasets.aegean.ai --s3td=njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadTiles
+    #Examples:
+    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/
+    python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=all --bn=cv.datasets.aegean.ai --s3td=njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
+    
+    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/
+    python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=all --bn=cv.datasets.aegean.ai --s3td=njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
+    
     '''
 
 
 
+
+@__time_this  
 def genImgPatches():
     '''
-    Generates image patches by splitting the tiles
-    Prerequisite: loadTiles() has been run or tiles are present in the data/<dataset>/tiles directory
+    Notes: 
+        Generates image patches by splitting the tiles
+        Prerequisite: loadFiles() has been run or tiles are present in the data/<dataset>/tiles directory
     
-    save_fmt (str): save format. Exs: jpeg, png
+    Inputs: 
+        ds (str): dataset folder. aka root folder for project
+        fs (str): fileset folder. aka subfolder to hold patches
+        mWH (int): maximum Width/Height of tiles
+        fmts (str): what raster file types should be converted to patches 
+                        (this is important since image files are associated w/ other file type like an .xml,.cpg,.dbf this makes sure those are ignored)
+        save_fmt (str): file format for patches. Exs: jpeg, png
+    
+    outputs:
+        folder containing patch image-files and any support files. 
     
     '''
-    ds = config['ds']
-    ts = config['ts']
-    save_fmt = config['sfmt']
-    tilesDir = '%s/tiles_%s'%(ds,ts)
-    tiles = os.listdir(tilesDir)
-    vbPrint('%i Tile files found in %s'%(len(tiles),tilesDir))
-    patchesDir = '%s/imagePatches_%s'%(ds,ts)
+    ##----------------------------Configuration/Setup---------------------------##
+    ds = config['ds']                                                           #dataset (root folder)
+    fs = config['fs']                                                           #fileset (subfolder)
+    window = __getWindow(window_config=config['mWH'])                           #dictonary w/ max window dimensions (default: width:5000,height:5000) 
     
-    ## Making the dirs
-    if(os.path.isdir(patchesDir)):
-        vbPrint('Found dir: %s'%(patchesDir))
-    else:
-        vbPrint('Making dir: %s'%(patchesDir))
-        os.mkdir(patchesDir)
+    file_formats = config['fmts'].replace(' ','').split(',')                    #convert string of file formats to list of formats
+    save_fmt = config['sfmt']                                                   #file format for patches when they are saved. (png,jpeg,GTiff) https://gdal.org/drivers/raster/index.html
+
+    worldDir = '%s/world_%s'%(ds,fs)                                            #directory with files to convert to patches 
+    worldFiles = __listdir(directory=worldDir,
+                           extensions=file_formats)                             #list of files to convert to patches
+                           
+    patchesDir = '%s/imagePatches_%s'%(ds,fs)                                   #subfolder for saving patches
+    vbPrint('%i World files found in %s'%(len(worldFiles),worldDir))            #display the number of files to be processed
     
-    ## Creation of Image patches
     
-    for imageName in tiles:
-        imgage_Path = fr'{tilesDir}/{imageName}'                                    #Generate Image Path 
+    __make_folders(rootfolder=ds,                                               ##Make folder to hold patches
+                   subfolder=patchesDir)                                        #method for making project rootfolder/subfolders
+    
+    
+    ##----------------------------Create Patches------------------------------------##
+    for count,imageName in enumerate(worldFiles):
+        imgage_Path = fr'{worldDir}/{imageName}'                                #recreate image path 
         vbPrint(f'Current Image Path: {imgage_Path}')
         
-        #Open File
-        array,profile = Open_Tiff(path_to_tiff = imgage_Path,
-                                  verbose = config['verbose'])
-                
-        #SplitTiff:
-        split_array = Split_Tiff(image=array,
-                                blockX = 256,
-                                blockY = 256,
-                                minScrapPercent = 0,
-                                verbose = config['verbose'])
+        
+        #Open world file & apply window to generate Tiles 
+        for tile_array,tile_meta,tile_name in Open_Raster(path_to_world = imgage_Path,      #current world file
+                                                          maxWidth = window['width'],       #this is maxWidth/maxHeight
+                                                          maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
+                                                          verbose = config['verbose']):
+                                                             
+            if 0 in tile_array.shape:
+                vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
+                continue
+        
+                                                                                ## Creation of Image patches
+            split_array = Split_Raster(image=tile_array,                        #current tile to split into patches
+                                       patchX = 256,                            #patch width
+                                       patchY = 256,                            #patch height
+                                       minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise patches along bot/right edges are discarded)
+                                       verbose = config['verbose'])
         
         
-        #Save Image Patches:
-        Save_Tiff(array=split_array,
-                  save_directory=patchesDir,
-                  image_index=imageName,
-                  profile = profile,
-                  save_fmt = save_fmt,
-                  verbose = config['verbose'])
-                  
-       
-    vbPrint('Image Patches made successfuly')    
+                                                                                ##Save Image Patches:
+            Save_Patches(array=split_array,                                     #split tile containing patches
+                         save_directory=patchesDir,                             #folder location to save patches in 
+                         image_index=tile_name,                                 #patches will be named as: tileName_tileXpos_tileYpos_patchXpos_patchYpos
+                         profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
+                         save_fmt = save_fmt,                                   #format to save patches as (ex: png,jpeg,geoTiff) 
+                         verbose = config['verbose'])
+
+    
+    ##----------------------------Quick Summary------------------------------------##
+    patchFiles = __listdir(directory=patchesDir,
+                           extensions=['all']) 
+    
+    vbPrint(f"Number of files created in {patchesDir}: {len(patchFiles)}\n{'-'*4}Image Patches made successfuly{'-'*4}")
+    
     '''
     #Example:
-    python3 dataPipeline.py --ds=dataset2 --ts=plTest  --sfmt=jpg -genImgPatches
+    python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=tif --sfmt=png --mWH=5000,5000 -genImgPatches
+    python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=jpg --sfmt=png --mWH=5000,5000 -genImgPatches
+    
     '''
 
 
+
 '''
-INVESTIGATION NEEDED FOR genLabelPatches AND genAnnotations:
-    - How to get the labels from the source (Find the source)
+INVESTIGATION NEEDED FOR genAnnotations:
     - How to make annotations from this
 '''
-def genLabelPatches():
-    '''
-    - Generates the label patches
-    - For training only
-    '''
-    ds = config['ds']
-    ts = config['ts']
-    labelPatchesDir = '%s/labelPatches_%s'%(ds,ts)
-    
-    ## Making the dirs
-    if(os.path.isdir(labelPatchesDir)):
-        vbPrint('Found dir: %s'%(labelPatchesDir))
-    else:
-        vbPrint('Making dir: %s'%(labelPatchesDir))
-        os.mkdir(labelPatchesDir)
 
-    ## Creation of Label patches
-    '''
-    TODO [Similar to generation of Image patches]
-    - Each tile has to be split into 400 patches
-    - The patches have to be saved in the [labelPatchesDir] directory
-    - The naming of the paches should be such that if we have the name of tile, we can generate the name of its patches
-      We could follow the format that has been used for year-1, it has been documented in the 'Formation of image patches'
-      section at docs.upabove.app/sidewalk/data-pipeline/_index.md. The names should map to their respective image patches
-    - Investigate and implement how to handle the world files
-    '''
-
-    vbPrint('Label Patches made successfuly')
 
 def genAnnotations():
     '''
