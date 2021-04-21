@@ -21,3 +21,5 @@ json
 sys
 traceback
 gdown
+scikit-image==0.18.1
+Shapely==1.7.1

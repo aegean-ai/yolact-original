@@ -26,7 +26,9 @@ import time                                                                     
 from pycocotools import mask
 import numpy as np
 import cv2
+from raster2coco import Raster2Coco
 
+# The default configs, may be overridden
 config = {
     'pipeline':[],
     'verbose': 1,
@@ -42,11 +44,56 @@ config = {
     'tileDimY':5000,
     'mWH': '5000,5000',
     'fmts':'jpg,png,tif',
-    'sfmt':'jpeg'
+    'sfmt':'jpeg',
+    'tvRatio':0.8
 }
 
 ############## Helper Functions #############
 
+def vbPrint(s):
+    '''
+    prints only if verbose is configured to 1
+    '''
+    if(config['verbose']==1):
+        print(s)
+
+def setConfig(argv):
+    '''
+    Sets the configuration for the pipeline if format is --<KEY>=<VALUE>
+    Adds steps to the pipeline if format is -<PipelineStep>
+    '''
+    # The type to typecast to when reading arguments
+    argType = { # Default is str
+        'verbose': int,
+        'pef' : float,
+        'score_threshold': float,
+        'det_score_threshold':float,
+        'rowsSplitPerTile':int,
+        'colsSplitPerTile':int,
+        'patchDimX':int,
+        'patchDimY':int,
+        'tvRatio':float
+    }
+    
+    global config
+    argv = argv[1:]
+    if('--verbose=0' in argv):
+        argv = ['--verbose=0']+argv
+
+    for arg in argv:
+        try:
+            if(arg[:2] == '--'):
+                x = arg[2:].split('=')
+                if(x[0] in argType):
+                    config[x[0]] = argType[x[0]](x[1])
+                else:
+                    config[x[0]] = str(x[1])
+            else:
+                assert arg[0] == '-'
+                config['pipeline'].append(arg[1:])
+        except:
+            traceback.print_exc()
+            vbPrint('Bad Argument: %s'%(arg))
 
 def __listdir(directory:str,extensions:list)->list:                             #list files with specified extensions (filter for tif/png/jpeg etc)
     
@@ -111,53 +158,6 @@ def __time_this(func):                                                          
     return __wrapper
 
 ############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
-
-
-
-def vbPrint(s):
-    '''
-    prints only if verbose is configured to 1
-    '''
-    if(config['verbose']==1):
-        print(s)
-
-def setConfig(argv):
-    '''
-    Sets the configuration for the pipeline if format is --<KEY>=<VALUE>
-    Adds steps to the pipelien if format is -<PipelineStep>
-    '''
-    argType = { # Default is str
-        'verbose': int,
-        'pef' : float,
-        'score_threshold': float,
-        'det_score_threshold':float,
-        'rowsSplitPerTile':int,
-        'colsSplitPerTile':int,
-        'patchDimX':int,
-        'patchDimY':int
-    }
-    
-    global config
-    argv = argv[1:]
-    if('--verbose=0' in argv):
-        argv = ['--verbose=0']+argv
-
-    for arg in argv:
-        try:
-            if(arg[:2] == '--'):
-                x = arg[2:].split('=')
-                if(x[0] in argType):
-                    config[x[0]] = argType[x[0]](x[1])
-                else:
-                    config[x[0]] = str(x[1])
-            else:
-                assert arg[0] == '-'
-                config['pipeline'].append(arg[1:])
-        except:
-            traceback.print_exc()
-            vbPrint('Bad Argument: %s'%(arg))
-            
-            
 
 @__time_this
 def loadFiles():
@@ -292,39 +292,62 @@ def genImgPatches():
     
     '''
 
-
-
-'''
-INVESTIGATION NEEDED FOR genAnnotations:
-    - How to make annotations from this
-'''
-
-
 def genAnnotations():
     '''
-    - Generates the train and test annotations files
+    - Generates the train and test annotations files using the 
     - For training only
     '''
     ds = config['ds']
     ts = config['ts']
-    labelPatchesDir = '%s/annotations_%s'%(ds,ts)
-    
+    tvRatio = config['tvRatio']
+
+    trainAnnFilename = 'annotations_train.json'
+    testAnnFilename = 'annotations_test.json'
+
+    labelPatchesDir = '%s/labelPatches_%s'%(ds,ts)
+    annDir = '%s/annotations_%s'%(ds,ts)
+
     ## Making the dirs
-    if(os.path.isdir(labelPatchesDir)):
-        vbPrint('Found dir: %s'%(labelPatchesDir))
+    if(os.path.isdir(annDir)):
+        vbPrint('Found dir: %s'%(annDir))
     else:
-        vbPrint('Making dir: %s'%(labelPatchesDir))
-        os.mkdir(labelPatchesDir)
+        vbPrint('Making dir: %s'%(annDir))
+        os.mkdir(annDir)
 
-    ## Creation of Train and Test annotation files
-    '''
-    TODO
-    - Generate the train and test annotation files using the images and labels.
-    - Check out the ML_Clip repo's czhUtils.py file. It seems they have made functions to generate the annotations.
-    '''
+    ## Getting the labels and splitting into training and validation images
+    vbPrint('Reading `%s` for label patches'%(labelPatchesDir))
+    labels = __listdir(labelPatchesDir, ['tif'])
+    vbPrint('Dataset Size   : %i'%(len(labels)))
+    labels = np.asarray(labels)
+    np.random.shuffle(labels)
+    splitIdx = int(labels.shape[0]*tvRatio)
+    trainData,valData = np.split(labels,[splitIdx])
+    
+    vbPrint('Training Data  : %i'%(len(trainData)))
+    vbPrint('Val Data       : %i'%(len(valData)))
+    
+    # Generate Annotations
+    vbPrint('Generating annotations for the training data')
+    trainR2C = Raster2Coco(trainData, labelPatchesDir)
+    trainJSON = trainR2C.createJSON()
 
-    vbPrint('Annotations made successfuly')
-    pass
+    with open('%s/annotations_train.json'%(annDir), 'w+') as outfile:
+        json.dump(trainJSON, outfile)
+    
+    del trainJSON
+    del trainR2C
+
+    vbPrint('Generating annotations for the validation data')
+    valR2C = Raster2Coco(valData, labelPatchesDir)
+    valJSON = valR2C.createJSON()
+
+    with open('%s/annotations_val.json'%(annDir), 'w+') as outfile:
+        json.dump(valJSON, outfile)
+    
+    del valJSON
+    del valR2C
+
+    vbPrint('Annotations made and saved successfuly')
 
 ############## POST TRAINING DATA PIPELINE FUNCTIONS #############
 def genInferenceJSON():
@@ -376,8 +399,8 @@ def genInferenceTiles():
         os.mkdir(inferenceTilesDir)
         
     detFilePath = '%s/inferencesJSON_%s/%s'%(ds,ts,config['infJSON'])
-    #annFilePath = '%s/annotations_%s/%s'%(ds,ts,config['annJSON'])
-    annFilePath = '%s/annotations/%s'%(ds,config['annJSON']) # For testing. Can be reverted once the data-pipeline part is completed.
+    #annFilePath = '%s/inference_annotations_%s/%s'%(ds,ts,config['annJSON'])
+    annFilePath = '%s/inference_annotations/%s'%(ds,config['annJSON']) # For testing. Can be reverted once the data-pipeline part is completed.
 
     # Generates a HashMap that stores the image tiles information
     # The program iterates through this to generate each tile
@@ -505,6 +528,9 @@ if __name__ == '__main__':
     LoadTiles Arguments:
         --s3td              -> [s3 URL] The s3 URI of the input image tiles. Ex: s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/
 
+    genAnnotations Arguments:
+        --tvRatio           -> The train/validation split ratio. For ex: 0.8 means out of 100 images, 80 will be train and 20 will be validation. 
+
     genInferenceJSON Arguments:
         --trained_model     -> [path] Path to the trained model. Ex: weights/DVRPCResNet50_8_88179_interrupt.pth
         --config            -> [config name] name of the config to be used from config.py. Example dvrpc_config
@@ -534,15 +560,16 @@ if __name__ == '__main__':
 
     The complete Pipeline:
         ### Data Pipeline
-        - loadTiles - John
-        - genImgPatches - John
-        - genLabelPatches - TODO -> ARCGIS
-        - genAnnotations - TODO  -> ARCGIS 
+        - loadTiles - John # Loads Image and Label tiles from S3
+        - genImgPatches - John # Generate Image Patches
+        - genLabelPatches - TODO # Generates Label Patches
+        - genAnnotations - TODO  # Generates Annotations
         ### MEVP Pipeline
         - genInferenceJSON - Done
         - genInferenceTiles - Done
         - Vectorize - TODO -> Rasterio or PyQGIS or ArcPy (Licensing)
         - Cleaning and Metrics
+        - exportData # Exports inference data into S3
     '''
     setConfig(sys.argv)
     vbPrint('Configuration set:')
