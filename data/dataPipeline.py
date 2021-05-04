@@ -14,7 +14,6 @@ Workflow:
 
 """
 ############## Imports/Setup #############
-
 import os
 import traceback
 import sys
@@ -27,6 +26,7 @@ from pycocotools import mask
 import numpy as np
 import cv2
 from raster2coco import Raster2Coco
+import pyproj
 
 # The default configs, may be overridden
 config = {
@@ -389,7 +389,10 @@ def genInferenceTiles():
     '''
     ds = config['ds']
     ts = config['ts']
+    tilesDir = '%s/tiles_%s'%(ds,ts)
     inferenceTilesDir = '%s/inferenceTiles_%s'%(ds,ts)
+    inferenceGeoJSONDir = '%s/inferenceGeoJSON_%s'%(ds,ts)
+    geoJSONFilename = '%s_%s.geojson'%(ds,ts)
 
     # Making the dirs
     if(os.path.isdir(inferenceTilesDir)):
@@ -397,10 +400,20 @@ def genInferenceTiles():
     else:
         vbPrint('Making dir: %s'%(inferenceTilesDir))
         os.mkdir(inferenceTilesDir)
-        
+
+    if(os.path.isdir(inferenceGeoJSONDir)):
+        vbPrint('Found dir: %s'%(inferenceGeoJSONDir))
+    else:
+        vbPrint('Making dir: %s'%(inferenceGeoJSONDir))
+        os.mkdir(inferenceGeoJSONDir)
+
     detFilePath = '%s/inferencesJSON_%s/%s'%(ds,ts,config['infJSON'])
-    #annFilePath = '%s/inference_annotations_%s/%s'%(ds,ts,config['annJSON'])
-    annFilePath = '%s/inference_annotations/%s'%(ds,config['annJSON']) # For testing. Can be reverted once the data-pipeline part is completed.
+    annFilePath = '%s/annotations_%s/%s'%(ds,ts,config['annJSON'])
+    #annFilePath = '%s/inference_annotations/%s'%(ds,config['annJSON']) # For testing. Can be reverted once the data-pipeline part is completed.
+
+    # Initialize GeoJSONFile
+    with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'w+') as geoJSONf:
+        geoJSONf.write('{"type": "FeatureCollection","name": "sidewalk_detections_%s_%s","features": ['%(ds,ts))
 
     # Generates a HashMap that stores the image tiles information
     # The program iterates through this to generate each tile
@@ -465,7 +478,15 @@ def genInferenceTiles():
     rows = config['rowsSplitPerTile']
     cols = config['colsSplitPerTile']
 
+    #### epsg: 3702 is close but thats Wyoming east
+    #  
+    # Initialize transformer
+    #   From:     epsg projection 32111 - nad83 / new jersey
+    #   To:       lat longs
+    projectionTransformer = pyproj.Transformer.from_crs("epsg:32111","epsg:4326",always_xy=False)
+
     i = 0
+    sidewalkCount = 0
     n = len(tileMap.keys())
     peFactor = config['pef']
 
@@ -499,6 +520,74 @@ def genInferenceTiles():
             # Cropping image into the final tile dimension
             infTile = infTile[:config['tileDimX'],:config['tileDimY']]
             
+            #cv2.imshow('tile',infTile)
+            #cv2.waitKey(0)
+
+            # Getting affine transform parameters from the world file
+            with open('%s/%s.JGw'%(tilesDir,tile)) as worldFile:
+                rows = worldFile.read().split('\n')
+
+            A = float(rows[0])
+            D = float(rows[1])
+            B = float(rows[2])
+            E = float(rows[3])
+            C = float(rows[4])
+            F = float(rows[5])
+
+            converter = Raster2Coco(None,None)
+            binMask = np.zeros_like(infTile)
+            binMask[infTile==255]=1
+            vectors = converter.binaryMask2Polygon(binMask)
+            JSONRows = ''
+            for sidewalk in vectors:
+                # Skipping any triangles
+                if(len(sidewalk) >= 4):
+                    sidewalkCount += 1
+                    # Applying affine transform
+                    #print(sidewalk)
+                    
+                    print(('-'*10)+'\nSidewalk pixels vector')
+                    print(sidewalk)
+                    
+                    print(('-'*10)+'\nUTM Vector')
+                    print(['[%f,%f]'%(
+                            ((A*x) + (B*y) + C,
+                            (D*x) + (E*y) + F)
+                    ) for y,x in sidewalk])
+                    
+                    vecLi = ['[%f,%f]'%(
+                        projectionTransformer.transform(
+                            ((A*x) + (B*y) + C),
+                            ((D*x) + (E*y) + F)
+                        )[::-1]
+                    ) for x,y in sidewalk]
+                    print(('-'*10)+'\nlat long vector')
+                    print(vecLi)
+
+                    exit()
+                    vecStr = '[[%s]]'%(','.join(vecLi))
+                    print(('-'*10)+'\nFinal vector string for ')
+                    print('%s'%(vecStr))
+                    rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
+                    
+                    # Skip comma for first sidewalk
+                    if(sidewalkCount == 1):
+                        rowStr = rowStr[1:]
+
+                    JSONRows += '%s'%(rowStr)
+                
+            if(JSONRows != ''):
+                with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+                    geoJSONf.write(JSONRows)
+
+            #################### DEBUG
+            #Note: append to geoJSON file after the loop when debug is complete
+            print('TILE: ',tile)
+            with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+                geoJSONf.write('\n]}')
+            exit()
+            ####################
+
             # Writing the image tile
             # File format kept as png because it has lossless compression and to work well with rasterio if needed.
             cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
