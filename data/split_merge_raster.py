@@ -94,8 +94,8 @@ def __enumerate_tiles(width,height,maxWidth,maxHeight):
     
     colsplit, rowsplit = width//maxWidth, height//maxHeight
     
-    for col in range(0,colsplit*maxWidth-1,maxWidth):
-        for row in range(0,rowsplit*maxHeight-1,maxHeight):
+    for col in range(0,colsplit*maxWidth+1,maxWidth):
+        for row in range(0,rowsplit*maxHeight+1,maxHeight):
             
             yield row, row+maxHeight, col, col+maxWidth
             
@@ -107,11 +107,16 @@ def __newTransform(oldtransform,xy,verbose=False):                              
         This function exists right now in the event tiles/patches need to be exported to Arcgis Pro.  
         It ensures that the tiles/patches will end up in the correct location on the map.
         
-    https://rasterio.readthedocs.io/en/latest/api/rasterio.transform.html    
+    https://rasterio.readthedocs.io/en/latest/api/rasterio.transform.html   
+    
+    Inputs:
+    oldtransform (affine): rasterio affine object
+                xy (dict): cols:left_col (x), rows:top_row (y)  pixel number
+        
     """
 
     
-    left,top = xy
+    left,top = rio.transform.xy(oldtransform, rows=xy['rows'], cols=xy['cols'])
     xpixel,ypixel = -1*float(oldtransform.e),float(oldtransform.a)
     newtransform = rio.transform.from_origin(west=left, 
                                              north=top, 
@@ -128,7 +133,7 @@ def __newTransform(oldtransform,xy,verbose=False):                              
 
     return newtransform
 
-def Open_Raster(path_to_world:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
+def Open_Raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
         """
             Note: convert / read the data into a numpy array,
                     return summary of information if needed
@@ -143,7 +148,7 @@ def Open_Raster(path_to_world:str,maxWidth:int=5000, maxHeight:int=5000, verbose
                         
                     
             inputs:
-                path_to_world (string): File path to world image. 
+                path_to_region (string): File path to region image. 
                 verbose (boolean): Used to print summary if needed
             
             outputs:
@@ -151,15 +156,15 @@ def Open_Raster(path_to_world:str,maxWidth:int=5000, maxHeight:int=5000, verbose
                 
 
         """
-        world_name = path_to_world.rsplit('/',1)[1].rsplit('.',1)[0]
+        region_name = path_to_region.rsplit('/',1)[1].rsplit('.',1)[0]
         
-        with rio.open(path_to_world) as src:
+        with rio.open(path_to_region) as src:
             bands = src.meta['count']
             tile_meta = src.meta.copy()
             
             if verbose:                                                         #Summary infor about World file
-                print('-'*4,'world summary','-'*4)
-                print('world datatypes: ', {i: dtype for i, dtype in zip(src.indexes, src.dtypes)})
+                print('-'*4,'region summary','-'*4)
+                print('region datatypes: ', {i: dtype for i, dtype in zip(src.indexes, src.dtypes)})
                 print('color interp: ', src.colorinterp)
                 print('tags: ',src.tags())
                 print('bounds: ', src.bounds)
@@ -185,11 +190,11 @@ def Open_Raster(path_to_world:str,maxWidth:int=5000, maxHeight:int=5000, verbose
                 tile_meta['width']  = tile_array.shape[1]                       #assumes tile has shape (bands,width,height)
                 tile_meta['height'] = tile_array.shape[2]
                 
-                #tile_meta['transform'] = __newTransform(oldtransform=src.profile['transform'],       #This function is not currently need See Jira UPA-47
-                #                                        xy=src.xy(col=left_col,row=top_row),
-                #                                       verbose=True)
+                tile_meta['transform'] = __newTransform(oldtransform=src.profile['transform'],       
+                                                        xy={'cols':left_col,'rows':top_row},
+                                                        verbose=True)
                 
-                tile_name = fr'{world_name}_tile_{left_col}_{top_row}'          #note that the xy order is different from window read
+                tile_name = fr'{region_name}_tile_{left_col}_{top_row}'          #note that the xy order is different from window read
                 
                 if verbose:                                                     #Print a summary of stats about Image
                     print(fr'{tile_name}: {type(tile_array)} | tile array shape: {tile_array.shape} | tile array memory size: {__get_size(tile_array)}')
@@ -198,7 +203,7 @@ def Open_Raster(path_to_world:str,maxWidth:int=5000, maxHeight:int=5000, verbose
         
         if verbose:
             N = (top_row//maxHeight + 1) * (left_col//maxWidth + 1)
-            print(fr'{N} Tiles Scanned for World File: {path_to_world}','\n')
+            print(fr'{N} Tiles Scanned for Region File: {path_to_region}','\n')
 
 
 
@@ -326,56 +331,7 @@ def Split_Raster(image:np.array,patchX:int,patchY:int,minScrapPercent:float,verb
 
 
 
-def __Merge_and_Unpad(blocks:np.array)-> np.array: 
-    """
-        Note: Will rebuild image by removing padding and merging blocks.
-                *Can not recover lost cells due to scrapping*
-                
-        inputs:
-            blocks (np.array): array of blocks to be joined & unpadded
-            
-        output:
-            unpadded (np.array): joined & unpadded array
-            
-    """
-    
-    bands,blockXpos,blockXdim,blockYpos,blockYdim = blocks.shape                                  #Contains information to rebuild original image
-    mergedImg = np.reshape(blocks,(bands,blockXpos*blockXdim,blockYpos*blockYdim))                #Joins blocks into a single image
-    
-    xMax = ((mergedImg[:,::-1,:].cumsum(axis=1) != 0).sum(axis = 1)).max() 
-    yMax = ((mergedImg[:,:,::-1].cumsum(axis = 2) != 0).sum(axis = 2)).max()                                                                                            #This finds padding by assuming padding occurs along bottom/right edges
-    
-    unpaddedImg = mergedImg[:,0:xMax,0:yMax]                                                      #Removes padding from bottom/right edge
-    
-    return unpaddedImg 
 
-def Merge_Blocks(blocks:np.array,mergeXdim:int,mergeYdim:int,minScrapPercent:float,verbose:bool = False)-> np.array:
-    """
-    #Note: To make block sizes larger blocks are merged into a full image, padding is removed,
-            finally the image can be broken back down to blocks of larger size. 
-    
-    inputs:
-        blocks (np.array):  array containing image blocks that will be joined,unpadded,then split into larger block sizes
-        mergeXdim (integer): the X dimension of final blocks 
-        mergeYdim (integer): the Y dimension of final blocks
-        minScrapPercent (float): min % of original cells required for blocks on edge.
-                                 The intent is to prevent slivers of cells with not enough context
-                                 resulting in reduced performance metrics. 
-                                 
-        verbose (boolean):  returns a summary of outputs
-        
-    outputs:
-        mergedImg (np.array): the final array with larger blocks. 
-        
-    """
-    
-    mergedImg = __Merge_and_Unpad(blocks)                                                        #Rebuilds Image
-    mergedImg = Split_Raster(mergedImg,mergeXdim,mergeYdim,minScrapPercent,verbose)                #Splits & Padds to a new size
-    
-    if verbose:
-        print(f'\nmerged shape: {mergedImg.shape}')
-
-    return mergedImg
     
 
 def __enumerate_patches(array):
@@ -389,13 +345,76 @@ def __enumerate_patches(array):
         for yBlockPosition in range(yBlocknum):
             yield xBlockPosition,yBlockPosition
 
+
+def __make_worldfile(affine,file_path:str,verbose:bool):
     
+    """
+    Note:
+        to future maintainters there is currently only 1 filetype in the exclusion list (gtiff)
+        if other filetypes that use header files are found, please add them to the exclusion list. 
+    
+    Inputs:
+                 affine: affine transform object
+        file_path (str): file path of parent image (must include extension)
+    
+    Outputs:
+        None: results in a world file being created and returns nothing 
+        
+    Sources;
+        per guidlines: http://webhelp.esri.com/arcims/9.3/General/topics/author_world_files.htm
+    
+    Example World file format:
+        20.17541308822119 = A
+        0.00000000000000 = D
+        0.00000000000000 = B
+        -20.17541308822119 = E
+        424178.11472601280548 = C
+        4313415.90726399607956 = F
+    
+    """
+
+    splitfp = file_path.rsplit('.',1)                                           #ideally file_path is of form {filename}.{fmt}
+    
+                                                                                #splitfp should ideally be ['filename','fmt']
+    if len(splitfp) >= 2:                                                       #checks for ideal case                                                       
+        filename,fmt = splitfp[0],splitfp[1] 
+    else:                                                                       #if there is no extension 
+        filename = splitfp[0]
+        fmt = ''
+        if filename == '':                                                      #if file name ends up being empty string something went wrong
+            print(f'world file could not be created for: {file_path} | filename of zero length generated') if verbose else None
+            return None
+            
+    if fmt.lower() in ('gtiff',):                                               #Check exclusion list (files that use header to store world data) 
+        print('No world file generated: file type is in exclusion list') if verbose else None
+        return None        
+    elif len(fmt) >= 3:                                                         #Uses 1st & 3rd letters of extension 
+        f1,f2 = fmt[0],fmt[2]
+        fmt = f'{f1}{f2}w'
+        file_path = f'{filename}.{fmt}'
+    elif len(fmt) == 0:                                                         #if image has no extension, w is appended to file name (per guidelines)
+        file_path = f'{filename}w'
+    else:                                                                       #Append 'w' without any other modification
+        fmt = f'{fmt}w'
+        file_path = f'{filename}.{fmt}'
+    
+    
+    data = f'{affine.a}\n{affine.d}\n{affine.b}\n{affine.e}\n{affine.c}\n{affine.f}'  
+    
+    with open(file_path,'w') as worldfile:                                      #Create world file
+        worldfile.write(data)        
+    print(f'world file create: {file_path}') if verbose else None
+    
+    
+   
 def Save_Patches(array:np.array, save_directory:str, save_fmt:str, tile_name:str, profile:dict, verbose:bool=False)->None: 
     """
     Notes:
         Method for saving image patches
           does not currently update affine transform the upper left pixel location will have to be worked out for each patch
-        
+          
+    *Note for future maintainters: Save_Tile & Save_Patches have very similar processes and inputs. 
+                                    If one function is updated or changed, please review the other function to ensure that update is not needed there.     
         
     Inputs:
             array (np.array): tile array 
@@ -414,65 +433,79 @@ def Save_Patches(array:np.array, save_directory:str, save_fmt:str, tile_name:str
 
     path_to_save = fr'{save_directory}/{tile_name}'
     
+    tile_affine = profile['transform']
     profile['driver'] = 'JPEG' if save_fmt == 'jpg' else save_fmt.upper()
-    profile['count'] = array.shape[0]                                           #band count
-    profile['width'] = array.shape[2]                                           #xPatchSize
-    profile['height'] = array.shape[4]                                          #yPatchSize
+    profile['count'] = array.shape[0]                                               #band count
+    profile['width'] = array.shape[2]                                               #xPatchSize
+    profile['height'] = array.shape[4]                                              #yPatchSize
     profile['photometric'] = 'RGB'
     
     print(f'updated raster meta data:\n{profile}') if verbose else None
     
-    for row_num, col_num in __enumerate_patches(array):
-        patch_path = fr'{path_to_save}_patch_{row_num}_{col_num}.{profile["driver"]}'
+    for row_num, col_num in __enumerate_patches(array):                                     #row_num, col_num: the patch position in the sliced array (not directly a pixel reference)
+        patch_path = fr'{path_to_save}_patch_{row_num}_{col_num}.{profile["driver"]}'       #patch filename: {world_name}_tile_{left_col}_{top_row}_patch_{row_num}_{col_num}.{fmt}
         
-        with rio.open(patch_path,'w',**profile) as dst:
-            dst.write(array[:,row_num,:,col_num,:])                             #array[bands,xPatchPosition,xPatchSize,yPatchPosition,yPatchSize] 
-    
+        left_col = col_num*profile['width'] 
+        top_row = row_num*profile['height']
+        
+        profile['transform'] = __newTransform(oldtransform= tile_affine,            #upadates the affine to set lat/long of upper left pixel 
+                                              xy={'cols':left_col,'rows':top_row},
+                                              verbose=True)        
+        
+        with rio.open(patch_path,'w',**profile) as dst:                             #create file
+            left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out patch
+            dst.write(array[:,row_num,:,col_num,:])                                 #array[bands,xPatchPosition,xPatchSize,yPatchPosition,yPatchSize] 
+            __make_worldfile(profile['transform'], patch_path,verbose)              #method for creating a world file. (a document that contains key affine info)
+        
     print(f'Save Completed to {path_to_save}\n') if verbose else None
     
-
-def Split_Tile(rasterfile:str,path_to_save:str,maxWidth:int,maxHeight:int,fileformat:str='PNG',verbose:bool=False):
     
-    with rio.open(rasterfile) as src:
-        tile_profile = {}
-        tile_profile['meta'] = src.meta.copy()
     
+def Save_Tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, profile:dict, verbose:bool=False)->None: 
+    """
+    Notes:
+        Method for saving tiles
+          does not currently update affine transform the upper left pixel location will have to be worked out for each patch
+    
+    *Note for future maintainters: Save_Tile & Save_Patches have very similar processes and inputs. 
+                                    If one function is updated or changed, please review the other function to ensure that update is not needed there.  
+        
+    Inputs:
+            array (np.array): tile array 
+        save_directory (str): name of subfolder that will hold tile
+              save_fmt (str): file type for image tile. ex JPEG/PNG etc
+             tile_name (str): naming convention '{region_name}_tile_{left_col}_{top_row}'
+              profile (dict): tile_meta
+          
+    Outputs:
+        None: will result in a tile being saved as tile_name to save_directory in specified save_fmt format
+        
+        
+    References:      
+              image profiles: https://rasterio.readthedocs.io/en/latest/topics/profiles.html
+           Supported drivers: https://gdal.org/drivers/raster/index.html
+               Saving Images: https://rasterio.readthedocs.io/en/latest/topics/writing.html           
+    """    
+    
+    
+    profile['driver'] = 'JPEG' if save_fmt == 'jpg' else save_fmt.upper()       #rasterio recognizes JPEG for jpg
+    profile['count'] = array.shape[0]                                           #band count
+    profile['width'] = array.shape[1]                                           #xTileSize
+    profile['height'] = array.shape[2]                                          #yTileSize
+    profile['photometric'] = 'RGB'
+    
+    print(f'updated raster meta data:\n{profile}') if verbose else None
+    
+    
+    tile_path = fr'{save_directory}/{tile_name}.{profile["driver"]}'
 
-        for row,height,col,width in __enumerate_tiles(src.meta['width'],src.meta['height'],maxWidth=maxWidth,maxHeight=maxHeight):
-            tile_path = fr"{path_to_save}/tile_{col}_{row}.{fileformat.lower()}"
-            tile = src.read(window=((row,height),(col,width)))                      #((rows),(cols))
-                                                                                    #tuple containing the indexes of the rows at which
-                                                                                    #the window starts and stops and the second is a tuple
-                                                                                    #containing the indexes of the columns at which the window
-                                                                                    #starts and stops
-            if 0 in tile.shape:
-                print(f'empty array found: {tile.shape} | x:{col},y:{row} | array: {tile}') if verbose else None
-                continue                                                                                    
-            elif len(tile.shape) not in (2,3):
-                print(f'tile is of unexpected shape: {tile.shape} Should be either (x,y) or (b,x,y) |x: {row}  y:{col}') if verbose else None
-                continue
+    if array.max():
+        print('Array Has Data') if verbose else None
+        with open(fr'{save_directory}/info.txt','a') as info:
+            info.write(f'{tile_name}.{profile["driver"]}: {array.sum()}\n')
             
-            try:#this try block is mostly just for trouble shooting and should not be strictly necessary. 
-               
-                Min,Max = tile.min(), tile.max()
-                if Max > 0:
-                    print(f'tile is not all zeros: tile shape:{tile.shape} | {col} {row}: {Min} {Max}') if verbose else None
-                else:
-                    print(f'tile is all zeros: tile shape: {tile.shape} | {col} {row}: {Min} {Max}') if verbose else None
-            except:
-                print(f'min/max error: {tile.shape} | {col} {row}') if verbose else None
-                print(f'meta:\n{tile_profile}\n')   if verbose else None
-                continue            
-            
-            L = len(tile.shape)
-            
-            tile_profile['meta']['width'] = tile.shape[L-2]
-            tile_profile['meta']['height'] = tile.shape[L-1]
-            tile_profile['meta']['driver'] = fileformat        
-
-            try:
-                with rio.open(tile_path,'w',**tile_profile['meta']) as dst:
-                    dst.write(tile)
-            except:
-                print(f'write error: tile shape: {tile.shape} | {col} {row}: {Min} {Max}') if verbose else None
-                
+    with rio.open(tile_path,'w',**profile) as dst:
+        dst.write(array)                                                        #tile array
+        __make_worldfile(profile['transform'], tile_path,verbose)                       #method for creating a world file. (a document that contains key affine info)
+        
+    print(f'Save Completed to {save_directory}\n') if verbose else None

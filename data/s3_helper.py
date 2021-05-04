@@ -160,7 +160,7 @@ def load_local_to_s3(local_folder:str,file_formats:list,s3_uri:str,verbose:bool)
         print('returned: ',x)
         
         
-    print(f'{n+1} file(s) uploaded to {s3_uri}') if verbose else None
+    print(f'{n+1} file(s) uploaded to {s3_uri}\n') if verbose else None
     
 
 

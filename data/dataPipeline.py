@@ -18,9 +18,9 @@ import os
 import traceback
 import sys
 import json
-from s3_helper import load_s3_to_local
-from split_merge_raster import Open_Raster,Split_Raster,Save_Patches            #These are all called w/in genImgPatches
-import time                                                                     #used in decorator __time_this()
+from s3_helper import load_s3_to_local,load_local_to_s3
+from split_merge_raster import Open_Raster,Split_Raster,Save_Tile,Save_Patches            #These are all called w/in genImgPatches
+import time                                                                               #used in decorator __time_this()
 
 from pycocotools import mask
 import numpy as np
@@ -29,10 +29,15 @@ from raster2coco import Raster2Coco
 import pyproj
 
 # The default configs, may be overridden
+import wget                                                                     #called within download_labels
+from zipfile import ZipFile                                                     #called within download_labels
+
+
 config = {
     'pipeline':[],
     'verbose': 1,
     'ds':None,
+    'ts':None,
     'pef': 0.1,    
     'score_threshold':0.0,
     'det_score_threshold':0.0,
@@ -162,21 +167,25 @@ def __time_this(func):                                                          
 @__time_this
 def loadFiles():
     '''
-    loads world data from s3 into the directory:
-        - ./data/<dataset>/world_<fileset>/
-        
+    Note:
+        loads region data from s3 into the directory:
+            - ./data/<dataset>/region_<fileset>/
     
-    s3Dir (str): bucket path to files
-    file_formats (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png']
+    Inputs:    
+              ds (str): local dataset folder (root folder)
+              fs (str): local fileset folder (sub folder)
+            s3td (str): bucket path to files
+            fmts (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png'], "all" -> ["all"] (all returns all files)
+
     
     '''
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset string. root folder of files
     fs = config['fs']                                                           #fileset string. folder to hold world files
-    s3Dir = config['s3td']                                                      #AWS URI for folder located in S3 bucket 
+    s3Dir = config['s3d']                                                       #AWS URI for folder located in S3 bucket 
     
     file_formats = config['fmts'].lower().replace(' ','').split(',')            #convert string of file formats to list of formats
-    loadDir = '%s/world_%s'%(ds,fs)                                             #root folder + subfolder
+    loadDir = '%s/region_%s'%(ds,fs)                                             #root folder + subfolder
     
     vbPrint('Load File(s) Starting...')
                                                                                 
@@ -184,29 +193,29 @@ def loadFiles():
                    subfolder=loadDir)                                           #method for making project rootfolder/subfolders
 
     ##----------------------------Load Files------------------------------------##
-                                                                                ##Retrieve aws bucket object                     
-    #s3bucket = __getS3bucket(bn)                                                #S3 Bucket access. Uses boto3 + local aws credentials to access bucket, 
     
-    
-    load_s3_to_local(s3_uri=s3Dir,
+                                                                                ##Retrieve aws bucket object    
+    load_s3_to_local(s3_uri=s3Dir,                                              #S3 Bucket access. Uses boto3 + local aws credentials to access bucket
                      desired_formats=file_formats,
                      load_dir=loadDir,
                      verbose=config['verbose'])
     
     
-    vbPrint('Loading World file(s) Completed')
+    vbPrint('Loading Region File(s) Completed')
     
     '''
     #Examples:
-    python3 dataPipeline.py --ds=dataset6 --fs=inputs --fmts=all --s3td=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
+    python3 dataPipeline.py --ds=dataset7 --fs=inputs --fmts=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
     
-    python3 dataPipeline.py --ds=dataset6 --fs=inputs --fmts=all --s3td=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
+    python3 dataPipeline.py --ds=dataset7 --fs=labels --fmts=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
     
+    python3 dataPipeline.py --ds=dataset7 --fs=vectors --fmts=geojson --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/vector_files/ -loadFiles 
     '''
 
 
-
-
+    
+        
+    
 @__time_this  
 def genImgPatches():
     '''
@@ -228,22 +237,33 @@ def genImgPatches():
     '''
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset (root folder)
-    fs = config['fs']                                                           #fileset (subfolder)
+    fs = config['fs']                                                           #existing fileset (subfolder)
+    ts = config['ts']                                                           #optional tileset (subfolder). Default is None, which means no tiles will be saved.
+    
     window = __getWindow(window_config=config['mWH'])                           #dictonary w/ max window dimensions (default: width:5000,height:5000) 
     
     file_formats = config['fmts'].replace(' ','').split(',')                    #convert string of file formats to list of formats
     save_fmt = config['sfmt']                                                   #file format for patches when they are saved. (png,jpeg,GTiff) https://gdal.org/drivers/raster/index.html
 
-    worldDir = '%s/world_%s'%(ds,fs)                                            #directory with files to convert to patches 
+    worldDir = '%s/region_%s'%(ds,fs)                                           #directory with files to convert to patches 
     worldFiles = __listdir(directory=worldDir,
                            extensions=file_formats)                             #list of files to convert to patches
+    
+    if ts is not None:                                                          #subfolder for saving tiles
+        tilesDir = '%s/imageTiles_%s'%(ds,ts)
+        __make_folders(rootfolder=ds,
+                       subfolder=tilesDir)    
+    
                            
     patchesDir = '%s/imagePatches_%s'%(ds,fs)                                   #subfolder for saving patches
-    vbPrint('%i World files found in %s'%(len(worldFiles),worldDir))            #display the number of files to be processed
+    vbPrint('%i Region files found in %s'%(len(worldFiles),worldDir))           #display the number of files to be processed
     
     
     __make_folders(rootfolder=ds,                                               ##Make folder to hold patches
                    subfolder=patchesDir)                                        #method for making project rootfolder/subfolders
+    
+    
+
     
     
     ##----------------------------Create Patches------------------------------------##
@@ -253,7 +273,7 @@ def genImgPatches():
         
         
         #Open world file & apply window to generate Tiles 
-        for tile_array,tile_meta,tile_name in Open_Raster(path_to_world = imgage_Path,      #current world file
+        for tile_array,tile_meta,tile_name in Open_Raster(path_to_region = imgage_Path,      #current world file
                                                           maxWidth = window['width'],       #this is maxWidth/maxHeight
                                                           maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
                                                           verbose = config['verbose']):
@@ -261,7 +281,9 @@ def genImgPatches():
             if 0 in tile_array.shape:
                 vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
                 continue
-        
+            
+            
+            
                                                                                 ## Creation of Image patches
             split_array = Split_Raster(image=tile_array,                        #current tile to split into patches
                                        patchX = 256,                            #patch width
@@ -269,28 +291,55 @@ def genImgPatches():
                                        minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise patches along bot/right edges are discarded)
                                        verbose = config['verbose'])
         
-        
+            if ts is not None:
+                Save_Tile(array=tile_array,                                     #tile array
+                          save_directory=tilesDir,                              #folder location to save tile in 
+                          tile_name=tile_name,                                  #patches will be named as: region_tile_{tileXpos}_{tileYpos}
+                          profile = tile_meta,                                  #rasterio requires a 'profile'(meta data) to create/write files
+                          save_fmt = save_fmt,                                  #format to save tiles as (ex: png,jpeg,geoTiff) 
+                          verbose = config['verbose'])
+            
                                                                                 ##Save Image Patches:
             Save_Patches(array=split_array,                                     #split tile containing patches
                          save_directory=patchesDir,                             #folder location to save patches in 
-                         tile_name=tile_name,                                 #patches will be named as: tileName_tileXpos_tileYpos_patchXpos_patchYpos
+                         tile_name=tile_name,                                   #patches will be named as: tileName_tileXpos_tileYpos_patchXpos_patchYpos
                          profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
-                         save_fmt = save_fmt,                                   #format to save patches as (ex: png,jpeg,geoTiff) 
+                         save_fmt = save_fmt,                                   #format to save patches as (ex: png,jpeg,GTiff) 
                          verbose = config['verbose'])
 
     
     ##----------------------------Quick Summary------------------------------------##
+    if ts is not None:
+        tileFiles = __listdir(directory=tilesDir,
+                              extensions=['all']) 
+        vbPrint(f"Number of files created in {tilesDir}: {len(tileFiles)}\n{'-'*4}Image Tiles made successfuly{'-'*4}")
+        
+        
     patchFiles = __listdir(directory=patchesDir,
                            extensions=['all']) 
-    
+                           
     vbPrint(f"Number of files created in {patchesDir}: {len(patchFiles)}\n{'-'*4}Image Patches made successfuly{'-'*4}")
     
     '''
     #Example:
     python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=tif --sfmt=png --mWH=5000,5000 -genImgPatches
     python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=jpg --sfmt=png --mWH=5000,5000 -genImgPatches
-    
+    python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=gtiff --mWH=5000,5000 -genImgPatches
+    python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=tiff --mWH=5000,5000 -genImgPatches
+    python3 dataPipeline.py --ds=dataset8 --fs=labels --ts=labels --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
+    python3 dataPipeline.py --ds=dataset9 --fs=labels --ts=labels9 --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
     '''
+
+
+
+    
+
+'''
+INVESTIGATION NEEDED FOR genAnnotations:
+    - How to make annotations from this
+'''
+
+
 
 def genAnnotations():
     '''
