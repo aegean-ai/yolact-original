@@ -23,3 +23,6 @@ traceback
 gdown
 scikit-image==0.18.1
 Shapely==1.7.1
+osgeo
+https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
+pytest
