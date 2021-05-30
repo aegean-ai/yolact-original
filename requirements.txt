@@ -14,7 +14,6 @@ pillow==6.1 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision
 pycocotools 
 PyQt5 # needed on KDE/Qt envs for matplotlib
 rasterio==1.2.1
-boto3==1.17.31
 configparser
 numpy
 json
@@ -26,3 +25,8 @@ Shapely==1.7.1
 osgeo
 https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
 pytest
+ipykernel
+jupyterlab
+hub # https://docs.activeloop.ai/en/latest/installing.html
+sagemaker
+boto3==1.17.31
