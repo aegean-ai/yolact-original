@@ -8,6 +8,7 @@ configparser
 json
 sys
 traceback
+gdown
 
 # CV
 opencv-python 
@@ -38,8 +39,8 @@ jupyterlab
 
 # GIS
 rasterio==1.2.1
-gdown
 Shapely==1.7.1
 osgeo
 https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
 planar
+pyproj==3.0.1
