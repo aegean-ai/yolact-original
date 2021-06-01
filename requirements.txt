@@ -1,5 +1,3 @@
-cudatoolkit
-
 pytest
 zmq 
 requests 
