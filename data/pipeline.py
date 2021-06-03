@@ -1,24 +1,71 @@
 """
-Important Definitions:
-    > World-File/World-Image: This is any input image of arbitrary size that must be broken down into patches.
-    > Tile-Image: This is any subdivision of a World-Image that is not a patch. The default is 5000x5000 but can be changed
-    > Patch(es)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded as 256x256
-    
-    > Input world-image: this is (are) the world files at the start of the pipeline
-    > Label world-image: this is (are) the world files representing the sidewalks(labels) for training
-    
-    Example: 
-    
-        Workflow
-        loadFiles (world inputs/labels) -> genImgPatches (inputs/labels) ->... 
-                                            |__ Open_Raster > Split_Raster > Save_Patches
+Definitions:
+    > Region-File/Region-Image: This is any input image of arbitrary size that must be broken down into patches.
+    > Tile-Image: This is any subdivision of a World-Image. The default is 5000x5000.
+    > Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded 256x256
+    > The patch size is set according to the input tensor size for the Yolact Model
+    > Dataset
+      > Each project (like upabove) can be considered one dataset. For the current scope of the project, only 
+      one dataset would be made i.e. for The NJ County. 
+      > It is possible that we want to work in a project similar to
+      upabove, say to do object detection on a completely new type of images i.e. we want to use the same pipeline for an entirely
+      different project. 
+      > To ensure separation of this data, a new dataset can be made for the new project.
+      > The dataset is abbreviated as 'ds' throughout the documentation and code.
+    > Tileset
+      > Each batch of tiles can be considered as a tileset. A dataset may have multiple tilesets.
+      > Any new batch of data that arrives should be treated like a new tileset. 
+      > All Pipeline steps take the dataset and tileset information and process only the mentioned dataset and tileset. 
+      This ensures that we don't have to unnecessarily process any old data in the project.
+      > The tileset is abbreviated as 'ts' throughout the documentation and code.
+
+General Info:
+    > This file has the code to perform all steps of the pipeline.
+    > The individual steps can be found in our github documentation: docs.upabove.app/sidewalk/_index.md
+    > The configuration of the pipeline as well as the steps to perform are passed as terminal arguments 
+
+Structure:
+This code in this file is present in N sections:
+    1. Imports/Setup
+        > Has all imports required throughout the code.
+    2. Helper Functions
+        > Common functions used throughout the code.
+    3. Pipeline Funtions
+        > Each step of the pipeline is modularized as one function.
+        > The functions are meant to be completely independent i.e. as long as prequisite the data is present,
+          They should run regardless of the fact that other pipeline steps have run before it.
+        > The pipeline Functions are further divided into 2 parts:
+            1. Data Pipeline Functions (Prior to Model Training)
+            2. Model Evaluation and Verification Functions (After Model Training)
+    4. Main Function
+
+Working logic of the Pipeline:
+    > Each pipeline step function works with one part of the pipeline. It has well defined input data and output data formats and locations.
+      This information is available as a comment over each pipeline function.
+    > Each step takes a set of parameters. These parameters are passed as arguments. The applicable arguments are also provided 
+      as comments along with the functions.
+
+The complete Pipeline:
+    ### Data Pipeline
+    - loadTiles #TODO
+    - genImgPatches
+    - genAnnotations
+    ### MEVP Pipeline
+    - genInferenceJSON
+    - genInferenceData #TODO -> GeoJSON projections
+    - Cleaning and Metrics #TODO
+    - exportData #TODO
 
     Attributes: 
     
     Todo: 
     
 """
-############## Imports/Setup #############
+
+#----------------------------------------------------------------#
+#------------------------ Imports/Setup -------------------------#
+#----------------------------------------------------------------#
+
 import os
 import traceback
 import sys
@@ -26,39 +73,41 @@ import json
 from s3_helper import load_s3_to_local,load_local_to_s3
 from split_merge_raster import Open_Raster,Split_Raster,Save_Tile,Save_Patches            #These are all called w/in genImgPatches
 import time                                                                               #used in decorator __time_this()
-
 from pycocotools import mask
 import numpy as np
 import cv2
 from raster2coco import Raster2Coco
 import pyproj
-
 # The default configs, may be overridden
 import wget                                                                     #called within download_labels
 from zipfile import ZipFile                                                     #called within download_labels
 
-
+# This is the default configuration of parameters for the pipeline
 config = {
-    'pipeline':[],
-    'verbose': 1,
-    'ds':None,
-    'ts':None,
-    'pef': 0.1,    
-    'score_threshold':0.0,
-    'det_score_threshold':0.0,
-    'rowsSplitPerTile':20,
-    'colsSplitPerTile':20,
-    'patchDimX':256,
-    'patchDimY':256,
-    'tileDimX':5000,
-    'tileDimY':5000,
-    'mWH': '5000,5000',
-    'fmts':'jpg,png,tif',
-    'sfmt':'jpeg',
-    'tvRatio':0.8
+    'pipeline':[], # Steps of the pipeline
+    'verbose': 1, # If set to 0, does not print detailed information to screen
+    'ds':None, # The Dataset
+    'ts':None, # The Tileset
+    'pef': 0.1, # Print-every-factor: Prints percentage completion after ever 'pef' factor of completion.
+    'score_threshold':0.0, # During evaluation of inferences from raw data using Model: Minimum score threshold for detecting sidewalks.
+    'det_score_threshold':0.0, # During generation of inference data from already generated inferenceJSON: Minimum sidewalk detection score threshold to include detection. 
+    'rowsSplitPerTile':20, # Expected rows per tile
+    'colsSplitPerTile':20, # Expected columns per tile
+    'patchDimX':256, # Patch dimension X
+    'patchDimY':256, # Patch dimension Y
+    'tileDimX':5000, # Tile Dimension X
+    'tileDimY':5000, # Tile Dimension Y
+    'mWH': '5000,5000', # maximum Width/Height of tiles: used in genImagePatches
+    'fmts':'jpg,png,tif', # image formats to consider when reading files
+    'sfmt':'jpeg', # Save format for generated patches in genImagePatches
+    'tvRatio':0.8, # The train-validation ratio used for generating training annotations
+    'genImgs':1, # in genInferenceData Setting this to 0 skips saving images 
+    'genGeoJSON':1 # in genInferenceData Setting this to 0 skips generation of geoJSON 
 }
 
-############## Helper Functions #############
+#----------------------------------------------------------------#
+#----------------------- Helper Functions -----------------------#
+#----------------------------------------------------------------#
 
 def vbPrint(s):
     """print only if verbose is enabled
@@ -71,15 +120,19 @@ def vbPrint(s):
         print(s)
 
 def setConfig(argv):
-    """Set the configuration for the pipeline if format is --<KEY>=<VALUE>
-         Adds steps to the pipeline if format is -<PipelineStep>.
+    '''
+    > Takes the terminal arguments as input
+    > Sets configuration variable for the pipeline or sets pipeline step depending on argument signature
 
-    Args:
-        argv ([type]): [description]
-    """
+    Argument Signatures:
+        > Configuration Variable    : --<KEY>=<VALUE>
+        > Pipeline Step             : -<PIPELINE_STEP>
+    '''
     
-    # The type to typecast to when reading arguments
-    argType = { # Default is str
+    # This sets the types for each argument. Any new arguments that are not strings need to have their types defined.
+    # The arguments will be parsed as these, if not parsable in the below format, the program will terminate.
+    # The default is argument is str
+    argType = {
         'verbose': int,
         'pef' : float,
         'score_threshold': float,
@@ -96,6 +149,10 @@ def setConfig(argv):
     if('--verbose=0' in argv):
         argv = ['--verbose=0']+argv
 
+    # Processes each argument based on their argType and overwrites their value in the config variable
+    # If it is a pipeline step, it gets added into the pipeline.
+    # If an argument cannot be parsed, an error is thrown and the program quits.
+    # The pipeline only runs after all arguments have been parsed.
     for arg in argv:
         try:
             if(arg[:2] == '--'):
@@ -190,11 +247,19 @@ def __time_this(func):                                                          
     
     return __wrapper
 
-############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
-
+#----------------------------------------------------------------#
+#-------------------- Data Pipeline Functions -------------------#
+#----------------------------------------------------------------#
 @__time_this
-def loadFiles():    
-    """Loads region data from s3 into the directory:
+def loadFiles():
+    '''
+    > This function loads all required files from S3.
+    > The files required at this stage of the pipeline would be the Tiles, Labels, and their World Files
+    > This code may have to change depending on how the Input data is available. 
+
+    [Code by John]
+    Note:
+        loads region data from s3 into the directory:
             - ./data/<dataset>/region_<fileset>/
     
     Inputs:    
@@ -202,8 +267,7 @@ def loadFiles():
             fs (str): local fileset folder (sub folder)
             s3td (str): bucket path to files
             fmts (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png'], "all" -> ["all"] (all returns all files)
-    """
-    
+    '''
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset string. root folder of files
     fs = config['fs']                                                           #fileset string. folder to hold world files
@@ -244,6 +308,7 @@ def loadFiles():
 @__time_this  
 def genImgPatches():
     '''
+    [Code by John]
     Notes: 
         Generates image patches by splitting the tiles
         Prerequisite: loadFiles() has been run or tiles are present in the data/<dataset>/tiles directory
@@ -258,8 +323,8 @@ def genImgPatches():
     
     outputs:
         folder containing patch image-files and any support files. 
-    
     '''
+
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset (root folder)
     fs = config['fs']                                                           #existing fileset (subfolder)
@@ -355,21 +420,19 @@ def genImgPatches():
     python3 dataPipeline.py --ds=dataset9 --fs=labels --ts=labels9 --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
     '''
 
-
-
-    
-
-'''
-INVESTIGATION NEEDED FOR genAnnotations:
-    - How to make annotations from this
-'''
-
-
-
 def genAnnotations():
     '''
-    - Generates the train and test annotations files using the 
-    - For training only
+    > Generates the train and test annotations files using the image and label patches
+    
+    Requirements:
+        > label patches should be available in <ds>/labelPatches_<ts>/..
+        > While not required by this function, corresponding image patches should be available in <ds>/imagePatches_<ts>/..
+
+    Generates:
+        > Two annotation files to be used by the model to train:
+            1. <ds>/annotations_<ts>/annotations_train.json
+            2. <ds>/annotations_<ts>/annotations_test.json
+
     '''
     ds = config['ds']
     ts = config['ts']
@@ -423,11 +486,14 @@ def genAnnotations():
 
     vbPrint('Annotations made and saved successfuly')
 
-############## POST TRAINING DATA PIPELINE FUNCTIONS #############
+
+#----------------------------------------------------------------#
+#--------- Model Evaluation and Verification Functions ----------#
+#----------------------------------------------------------------#
 def genInferenceJSON():
     '''
-    - Generates inferences and saves the sidewalk detections (Dets) in a JSON file
-    - This works on the data mentioned in the selected configuration from config.py
+    > Uses shell commands to run the eval.py for the configured parameters of the pipeline
+    > This generates inferences in a JSON file saved in <ds>/inferencesJSON_<ts>/
     '''
     ds = config['ds']
     ts = config['ts']
@@ -455,29 +521,59 @@ def genInferenceJSON():
     os.system(shCmd)
     vbPrint('Completed')
 
-def genInferenceTiles():
-    """Generate a list of inferenceTiles for each tile in the Detset .
-        
-        Prerequisite: genInferenceJSON() has been run and the Dets JSON is available in ./<datset>/inferenceTiles_<tileset>/
-        Make all inferences. For each tile, pick and merge an inference for each of its patches
- 
-        Note: 
-        
-        Args:
-        
-        Returns:
-        
-        Todo:  
-    """
-    
+def genInferenceData():
     '''
-      '''
+    Generates Upto 2 types of inference data from the inferences JSON output by the model which is generated by genInferenceJSON():
+        1. Inference GeoJSON: a single geoJSON that has all the inferences as vector polygons. The file is a .geojson in <ds>/inferenceGeoJSON_<ts>
+        2. Inference Tiles: Merged inferences for each of the 5000x5000 tiles, each tile is available as a .png images in <ds>/inferenceTiles_<ts>
+    Requirements:
+        > The required annotation file must be present in <ds>/annotations_<ts>
+        > The inferences JSON generated by the model must be present in <ds>/inferencesJSON_<ts>/..
+    
+    Algorithm:
+        > The detections are available based on image_id. This id does not correspond to any tile or patch identification directly.
+        > The annotations file has, for each image_id, the associated tile number and patch co-ordinates encoded into the image name.
+        > We first read the entire annotations file and create a HashMap that stores, for each tile: a list of all patches' information.
+        > The information for a patch includes its image_id, its tile number, and its patch co-ordinates
+        > Once this hashMap is prepared, we are ready to iterate on a tile by tile basis:
+            > For each tile, we have the patch info for all patches. For each patch:
+                > We have the tile number which is the 'tile' itself
+                > We have raw image present with the name 'tile_<patch Co-ordinate X>_<patch Co-ordinate Y>'
+                > We have the associated patch detections with the 'image_id' in the inferences JSON
+            > Essentilly: We have a mapping between the tile and image_ids for all patches in the tile, for all tiles.
+            > For each patch:
+                > We have the detection vectors. This is in a COCO vector format and needs to be rasterized.
+                > For the 256x256 patch, we have many detections each with a score.
+                > We generate an empty image 256x256 image filled with 0s.
+                > For each detection, we rasterize the detection and add it to the raster image if it is above the configurable threshold.
+                > Sidewalk pixels are marked 255. If multiple detections mark the same pixel as a sidewalk, it is still 255.
+                > 255 was chosen instead of 1 for the sake of simplicity: If viewed as an image, this raster shows the sidewalk in white
+                  with a black background very clearly.
+            > Essentilly: For each 'image_id' (i.e. for each patch), we now have a rasterized inference.
+            > For each tile:
+                > We now go through the all of patches, pull their rasters from the HashMap.
+                > Since the patch information includes the co-ordinates of a patch in a tile, we know the indexes of the 256x256 block in the 5000x5000px tile.
+                > Using this info, we generate a single 5000x5000 raster for each tile.
+                > Generation of the GeoJSON:
+                    > Since we know the tile i.e. the path and name of the tile image, we can infer the path and name of the respective world file
+                    > The Raster can be converted into polygon vectors
+                    > For each detected polygon of >3 points, it is added into the geoJSON.
+                    > The geoJSON file is initialized at the start of the code, opened for processing each tile and closed. 
+        > Once all the tiles are processed, the appropriate line endings are appended to the geoJSON.
+
+    Notes:
+        > The saving images can be skipped the argument '--genImgs=0'
+        > The generation of geoJSON can be skipped with the argument '--genGeoJSON=0'
+        > If both arguments are provided, nothing is saved. (Possible use-case is for debugging)
+    '''
     ds = config['ds']
     ts = config['ts']
     tilesDir = '%s/tiles_%s'%(ds,ts)
     inferenceTilesDir = '%s/inferenceTiles_%s'%(ds,ts)
     inferenceGeoJSONDir = '%s/inferenceGeoJSON_%s'%(ds,ts)
     geoJSONFilename = '%s_%s.geojson'%(ds,ts)
+    genImgs = config['genImgs']
+    genGeoJSON = config['genGeoJSON']
 
     # Making the dirs
     if(os.path.isdir(inferenceTilesDir)):
@@ -496,9 +592,10 @@ def genInferenceTiles():
     annFilePath = '%s/annotations_%s/%s'%(ds,ts,config['annJSON'])
     #annFilePath = '%s/inference_annotations/%s'%(ds,config['annJSON']) # For testing. Can be reverted once the data-pipeline part is completed.
 
-    # Initialize GeoJSONFile
-    with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'w+') as geoJSONf:
-        geoJSONf.write('{"type": "FeatureCollection","name": "sidewalk_detections_%s_%s","features": ['%(ds,ts))
+    if(genGeoJSON):
+        # Initialize GeoJSONFile
+        with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'w+') as geoJSONf:
+            geoJSONf.write('{"type": "FeatureCollection","name": "sidewalk_detections_%s_%s","features": ['%(ds,ts))
 
     # Generates a HashMap that stores the image tiles information
     # The program iterates through this to generate each tile
@@ -576,7 +673,7 @@ def genInferenceTiles():
     peFactor = config['pef']
 
     '''
-    For each tile, gets the detections (coco encoded vectors) and merges them into one image.
+    For each tile, gets the detection masks and merges them into one image.
     It seems that many patches are missing in inferences. It is assumed these don't have any detections and are skipped.
     '''
     for i,tile in enumerate(tileMap.keys()):
@@ -604,78 +701,67 @@ def genInferenceTiles():
             
             # Cropping image into the final tile dimension
             infTile = infTile[:config['tileDimX'],:config['tileDimY']]
-            
-            #cv2.imshow('tile',infTile)
-            #cv2.waitKey(0)
 
-            # Getting affine transform parameters from the world file
-            with open('%s/%s.JGw'%(tilesDir,tile)) as worldFile:
-                rows = worldFile.read().split('\n')
+            if(genGeoJSON):
+                # Getting affine transform parameters from the world file
+                with open('%s/%s.JGw'%(tilesDir,tile)) as worldFile:
+                    rows = worldFile.read().split('\n')
 
-            A = float(rows[0])
-            D = float(rows[1])
-            B = float(rows[2])
-            E = float(rows[3])
-            C = float(rows[4])
-            F = float(rows[5])
+                A = float(rows[0])
+                D = float(rows[1])
+                B = float(rows[2])
+                E = float(rows[3])
+                C = float(rows[4])
+                F = float(rows[5])
 
-            converter = Raster2Coco(None,None)
-            binMask = np.zeros_like(infTile)
-            binMask[infTile==255]=1
-            vectors = converter.binaryMask2Polygon(binMask)
-            JSONRows = ''
-            for sidewalk in vectors:
-                # Skipping any triangles
-                if(len(sidewalk) >= 4):
-                    sidewalkCount += 1
-                    # Applying affine transform
-                    #print(sidewalk)
+                converter = Raster2Coco(None,None)
+                binMask = np.zeros_like(infTile)
+                binMask[infTile==255]=1
+                vectors = converter.binaryMask2Polygon(binMask)
+                JSONRows = ''
+                for sidewalk in vectors:
+                    # Skipping any triangles
+                    if(len(sidewalk) >= 4):
+                        sidewalkCount += 1
+                        # Applying affine transform
+                        '''
+                        print(('-'*10)+'\nSidewalk pixels vector')
+                        print(sidewalk)
+                        
+                        print(('-'*10)+'\nUTM Vector')
+                        print(['[%f,%f]'%(
+                                ((A*x) + (B*y) + C,
+                                (D*x) + (E*y) + F)
+                        ) for y,x in sidewalk])
+                        '''
+                        vecLi = ['[%f,%f]'%(
+                            projectionTransformer.transform(
+                                ((A*x) + (B*y) + C),
+                                ((D*x) + (E*y) + F)
+                            )[::-1]
+                        ) for x,y in sidewalk]
+                        #print(('-'*10)+'\nlat long vector')
+                        #print(vecLi)
+
+                        vecStr = '[[%s]]'%(','.join(vecLi))
+                        #print(('-'*10)+'\nFinal vector string for ')
+                        #print('%s'%(vecStr))
+                        rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
+                        
+                        # Skip comma for first sidewalk
+                        if(sidewalkCount == 1):
+                            rowStr = rowStr[1:]
+
+                        JSONRows += '%s'%(rowStr)
                     
-                    print(('-'*10)+'\nSidewalk pixels vector')
-                    print(sidewalk)
-                    
-                    print(('-'*10)+'\nUTM Vector')
-                    print(['[%f,%f]'%(
-                            ((A*x) + (B*y) + C,
-                            (D*x) + (E*y) + F)
-                    ) for y,x in sidewalk])
-                    
-                    vecLi = ['[%f,%f]'%(
-                        projectionTransformer.transform(
-                            ((A*x) + (B*y) + C),
-                            ((D*x) + (E*y) + F)
-                        )[::-1]
-                    ) for x,y in sidewalk]
-                    print(('-'*10)+'\nlat long vector')
-                    print(vecLi)
+                if(JSONRows != ''):
+                    with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+                        geoJSONf.write(JSONRows)
 
-                    exit()
-                    vecStr = '[[%s]]'%(','.join(vecLi))
-                    print(('-'*10)+'\nFinal vector string for ')
-                    print('%s'%(vecStr))
-                    rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
-                    
-                    # Skip comma for first sidewalk
-                    if(sidewalkCount == 1):
-                        rowStr = rowStr[1:]
-
-                    JSONRows += '%s'%(rowStr)
-                
-            if(JSONRows != ''):
-                with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
-                    geoJSONf.write(JSONRows)
-
-            #################### DEBUG
-            #Note: append to geoJSON file after the loop when debug is complete
-            print('TILE: ',tile)
-            with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
-                geoJSONf.write('\n]}')
-            exit()
-            ####################
-
-            # Writing the image tile
-            # File format kept as png because it has lossless compression and to work well with rasterio if needed.
-            cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
+            if(genImgs):
+                # Writing the image tile
+                # File format kept as png because it has lossless compression and to work well with rasterio if needed.
+                cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
 
             # Prints progress at every 'pef' factor of completion
             # PEF stands for 'Print-Every factor'
@@ -684,7 +770,19 @@ def genInferenceTiles():
                 vbPrint('Generating inferences tile: %i/%i\t%0.2f %%'%(i+1,n,100*facComp))
                 peFactor += config['pef']
 
-    vbPrint('Inference Tiles generated Successfully')
+    if(genGeoJSON):
+        #print('TILE: ',tile)
+        with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+            geoJSONf.write('\n]}')
+
+    if(genGeoJSON and genImgs):
+        vbPrint('Inference GeoJSON and Tiles generated Successfully')
+    elif(genGeoJSON):
+        vbPrint('Inference GeoJSON generated Successfully')
+    elif(genImgs):
+        vbPrint('Inference Tiles generated Successfully')
+    else:
+        vbPrint('Inference Data ran successfully. Nothing saved due to arguments passed.')
 
 if __name__ == '__main__':
     '''
@@ -710,9 +808,11 @@ if __name__ == '__main__':
         --config            -> [config name] name of the config to be used from config.py. Example dvrpc_config
         --score_threshold   -> [float] The score threshold to use for inferences. Example: 0.0
 
-    genInferenceTiles Arguments:
+    genInferenceData Arguments:
         --annJSON           -> [path] name of the annotations .JSON file. Example: DVRPC_test.json
         --infJSON           -> [path] name of the created inference .JSON file. Example: DVRPCResNet50.json
+        --genGeoJSON        -> [0 or 1] Skips generation of geoJSON if set to 0. Default is 1
+        --genImgs           -> [0 or 1] Skips generation of images if set to 0. Default is 1 
 
     Misc Arguments:
         --verbose           -> [0 or 1] Setting it to 1 allows print statements to run. Default: 1
@@ -729,21 +829,8 @@ if __name__ == '__main__':
             ```bash
             python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgPatches -genAnnotations
             python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
-            python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceTiles --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
+            python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceData --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
             ```
-
-    The complete Pipeline:
-        ### Data Pipeline
-        - loadTiles - John # Loads Image and Label tiles from S3
-        - genImgPatches - John # Generate Image Patches
-        - genLabelPatches - TODO # Generates Label Patches
-        - genAnnotations - TODO  # Generates Annotations
-        ### MEVP Pipeline
-        - genInferenceJSON - Done
-        - genInferenceTiles - Done
-        - Vectorize - TODO -> Rasterio or PyQGIS or ArcPy (Licensing)
-        - Cleaning and Metrics
-        - exportData # Exports inference data into S3
     '''
     setConfig(sys.argv)
     vbPrint('Configuration set:')
