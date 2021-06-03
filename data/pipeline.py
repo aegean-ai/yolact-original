@@ -2,16 +2,21 @@
 Important Definitions:
     > World-File/World-Image: This is any input image of arbitrary size that must be broken down into patches.
     > Tile-Image: This is any subdivision of a World-Image that is not a patch. The default is 5000x5000 but can be changed
-    > Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded as 256x256
+    > Patch(es)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded as 256x256
     
-    > Input world-image: this is(are) the world files at the start of the pipeline
-    > Label world-image: this is(are) the world files representing the sidewalks(labels) for training
+    > Input world-image: this is (are) the world files at the start of the pipeline
+    > Label world-image: this is (are) the world files representing the sidewalks(labels) for training
     
+    Example: 
     
-Workflow:
-    loadFiles (world inputs/labels) -> genImgPatches (inputs/labels) ->... 
+        Workflow
+        loadFiles (world inputs/labels) -> genImgPatches (inputs/labels) ->... 
                                             |__ Open_Raster > Split_Raster > Save_Patches
 
+    Attributes: 
+    
+    Todo: 
+    
 """
 ############## Imports/Setup #############
 import os
@@ -56,17 +61,23 @@ config = {
 ############## Helper Functions #############
 
 def vbPrint(s):
-    '''
-    prints only if verbose is configured to 1
-    '''
+    """print only if verbose is enabled
+
+    Args:
+        s ([type]): [description]
+    """
+    
     if(config['verbose']==1):
         print(s)
 
 def setConfig(argv):
-    '''
-    Sets the configuration for the pipeline if format is --<KEY>=<VALUE>
-    Adds steps to the pipeline if format is -<PipelineStep>
-    '''
+    """Set the configuration for the pipeline if format is --<KEY>=<VALUE>
+         Adds steps to the pipeline if format is -<PipelineStep>.
+
+    Args:
+        argv ([type]): [description]
+    """
+    
     # The type to typecast to when reading arguments
     argType = { # Default is str
         'verbose': int,
@@ -101,6 +112,15 @@ def setConfig(argv):
             vbPrint('Bad Argument: %s'%(arg))
 
 def __listdir(directory:str,extensions:list)->list:                             #list files with specified extensions (filter for tif/png/jpeg etc)
+    """Returns a list of files that match the given extensions .
+
+    Args:
+        directory (str): [description]
+        extensions (list): [description]
+
+    Returns:
+        list: [description]
+    """
     
     Files = os.listdir(directory)                                               #list all files
     files = []
@@ -111,6 +131,12 @@ def __listdir(directory:str,extensions:list)->list:                             
     return files                                                                #return file names that match requested extensions
     
 def __make_folders(rootfolder:str,subfolder:str)->None:
+    """Create the directories in the specified rootfolder and subfolder .
+
+    Args:
+        rootfolder (str): [description]
+        subfolder (str): [description]
+    """
     ## Making the dirs
     if(os.path.isdir(rootfolder)):                                              #Make/check for Root directory 
         vbPrint('Found dir: %s'%(rootfolder))
@@ -126,12 +152,10 @@ def __make_folders(rootfolder:str,subfolder:str)->None:
     
 
           
-def __getWindow(window_config:str):                                             #Called in genImgPatches()
-    """
-    Note:
-        parses window_config to get height and width as integers
+def __getWindow(window_config:str):                                             #Called in genImgPatches() 
+    """Parses window_config to get height and width as integers
     
-    Inputs:
+    Args:
         window_config (str): string of window height and width. Example: '5000,5000'
     
     Outputs:
@@ -144,7 +168,11 @@ def __getWindow(window_config:str):                                             
     return window
   
 def __time_this(func):                                                          #Currently used on loadFiles & genImgPatches
-    
+    """CPU Time of a function execution.
+
+    Args:
+        func ([type]): [description]
+    """
     def __wrapper(*args,**kwargs):
         start = time.perf_counter()
         result = func(*args,**kwargs)
@@ -165,20 +193,17 @@ def __time_this(func):                                                          
 ############## PRE TRAINING DATA PIPELINE FUNCTIONS #############
 
 @__time_this
-def loadFiles():
-    '''
-    Note:
-        loads region data from s3 into the directory:
+def loadFiles():    
+    """Loads region data from s3 into the directory:
             - ./data/<dataset>/region_<fileset>/
     
     Inputs:    
-              ds (str): local dataset folder (root folder)
-              fs (str): local fileset folder (sub folder)
+            ds (str): local dataset folder (root folder)
+            fs (str): local fileset folder (sub folder)
             s3td (str): bucket path to files
             fmts (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png'], "all" -> ["all"] (all returns all files)
-
+    """
     
-    '''
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset string. root folder of files
     fs = config['fs']                                                           #fileset string. folder to hold world files
@@ -431,11 +456,22 @@ def genInferenceJSON():
     vbPrint('Completed')
 
 def genInferenceTiles():
+    """Generate a list of inferenceTiles for each tile in the Detset .
+        
+        Prerequisite: genInferenceJSON() has been run and the Dets JSON is available in ./<datset>/inferenceTiles_<tileset>/
+        Make all inferences. For each tile, pick and merge an inference for each of its patches
+ 
+        Note: 
+        
+        Args:
+        
+        Returns:
+        
+        Todo:  
+    """
+    
     '''
-    Prerequisite: genInferenceJSON() has been run and the Dets JSON is available in ./<datset>/inferenceTiles_<tileset>/
-    Make all inferences
-    For each tile, pick and merge an inference for each of its patches
-    '''
+      '''
     ds = config['ds']
     ts = config['ts']
     tilesDir = '%s/tiles_%s'%(ds,ts)
