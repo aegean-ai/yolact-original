@@ -5,8 +5,6 @@ requests
 cython
 Cython
 configparser
-json
-sys
 traceback
 
 # CV
