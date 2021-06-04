@@ -42,3 +42,8 @@ osgeo
 https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
 planar
 pyproj==3.0.1
+
+# api documentation
+sphinx
+sphinx-rtd-theme
+myst-parser
