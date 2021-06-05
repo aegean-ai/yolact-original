@@ -1,11 +1,5 @@
-# Installs dependencies for YOLACT managed by Anaconda. 
-# Advantage is you get working CUDA+cuDNN+pytorch+torchvison versions.
-#
-# TODO: you must additionally install nVidia drivers, eg. on Ubuntu linux 
-# `apt install nvidia-driver-440` (change the 440 for whatever version you need/have).
-#
-name: yolact-env
-#prefix: /your/custom/path/envs/yolact-env
+name: yolactpp-env
+prefix: /opt/conda/envs/yolactpp-env
 channels:
   - conda-forge
   - pytorch
@@ -14,11 +8,10 @@ dependencies:
   - python==3.8
   - pip
   - cython 
-  - pytorch::torchvision
   - pytorch::pytorch ==1.7
-  - cudatoolkit-dev
-  - cudnn
-  - pytorch::cuda100
+  - pytorch::torchvision==0.8.1
+  #- cudatoolkit-dev
+  #- cudnn
   - matplotlib
   - git # to download COCO dataset
   - curl # to download COCO dataset
@@ -29,4 +22,29 @@ dependencies:
     - pillow <7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
     - pycocotools 
     - PyQt5 # needed on KDE/Qt envs for matplotlib
+    - pytest
+    - zmq 
+    - requests 
+    - configparser
+    - gdown
+    - scikit-image
+    - python_image_complete 
+    - wai.annotations<=0.3.5 
+    - pytorch-lightning
+    - urllib3 
+    - hub # https://docs.activeloop.ai/en/latest/installing.html
+    - sagemaker[local]
+    - boto3==1.17.59
+    - PyYAML
+    - ipykernel
+    - jupyterlab
+    - rasterio==1.2.1
+    - Shapely==1.7.1
+    - https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
+    - planar
+    - pyproj==3.0.1
+    - sphinx
+    - sphinx-rtd-theme
+    - myst-parser
+
 
