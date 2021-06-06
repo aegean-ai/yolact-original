@@ -534,8 +534,8 @@ def genInferenceData():
             > Essentilly: For each 'image_id' (i.e. for each patch), we now have a rasterized inference.
             > For each tile:
                 > We now go through the all of patches, pull their rasters from the HashMap.
-                > Since the patch information includes the co-ordinates of a patch in a tile, we know the indexes of the 256x256 block in the 5000x5000px tile.
-                > Using this info, we generate a single 5000x5000 raster for each tile.
+                > Since the patch information includes the co-ordinates of a patch in a tile, we know the indexes of the 256x256 block in the 5120x5120 tile.
+                > Using this info, we generate a single 5120x5120 raster for each tile. This is then cropped to 5000x500px similar to year-1.
                 > Generation of the GeoJSON:
                     > Since we know the tile i.e. the path and name of the tile image, we can infer the path and name of the respective world file
                     > The Raster can be converted into polygon vectors
