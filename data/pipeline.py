@@ -56,6 +56,10 @@ The complete Pipeline:
     - Cleaning and Metrics #TODO
     - exportData #TODO
 
+    Attributes: 
+    
+    Todo: 
+    
 """
 
 #----------------------------------------------------------------#
@@ -106,10 +110,12 @@ config = {
 #----------------------------------------------------------------#
 
 def vbPrint(s):
-    '''
-    > Prints only if verbose is configured to 1
-    > This is to be used as the default print statement throughout the code
-    '''
+    """print only if verbose is enabled
+
+    Args:
+        s ([type]): [description]
+    """
+    
     if(config['verbose']==1):
         print(s)
 
@@ -163,9 +169,16 @@ def setConfig(argv):
             vbPrint('Bad Argument: %s'%(arg))
 
 def __listdir(directory:str,extensions:list)->list:                             #list files with specified extensions (filter for tif/png/jpeg etc)
-    '''
-    Lists all directories: [Code by John]
-    '''
+    """Returns a list of files that match the given extensions .
+
+    Args:
+        directory (str): [description]
+        extensions (list): [description]
+
+    Returns:
+        list: [description]
+    """
+    
     Files = os.listdir(directory)                                               #list all files
     files = []
     for file in Files:
@@ -175,9 +188,12 @@ def __listdir(directory:str,extensions:list)->list:                             
     return files                                                                #return file names that match requested extensions
     
 def __make_folders(rootfolder:str,subfolder:str)->None:
-    '''
-    Makes folders: [Code by John]
-    '''
+    """Create the directories in the specified rootfolder and subfolder .
+
+    Args:
+        rootfolder (str): [description]
+        subfolder (str): [description]
+    """
     ## Making the dirs
     if(os.path.isdir(rootfolder)):                                              #Make/check for Root directory 
         vbPrint('Found dir: %s'%(rootfolder))
@@ -193,12 +209,10 @@ def __make_folders(rootfolder:str,subfolder:str)->None:
     
 
           
-def __getWindow(window_config:str):                                             #Called in genImgPatches()
-    """
-    Note:
-        parses window_config to get height and width as integers
+def __getWindow(window_config:str):                                             #Called in genImgPatches() 
+    """Parses window_config to get height and width as integers
     
-    Inputs:
+    Args:
         window_config (str): string of window height and width. Example: '5000,5000'
     
     Outputs:
@@ -211,7 +225,11 @@ def __getWindow(window_config:str):                                             
     return window
   
 def __time_this(func):                                                          #Currently used on loadFiles & genImgPatches
-    
+    """CPU Time of a function execution.
+
+    Args:
+        func ([type]): [description]
+    """
     def __wrapper(*args,**kwargs):
         start = time.perf_counter()
         result = func(*args,**kwargs)
@@ -245,8 +263,8 @@ def loadFiles():
             - ./data/<dataset>/region_<fileset>/
     
     Inputs:    
-              ds (str): local dataset folder (root folder)
-              fs (str): local fileset folder (sub folder)
+            ds (str): local dataset folder (root folder)
+            fs (str): local fileset folder (sub folder)
             s3td (str): bucket path to files
             fmts (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png'], "all" -> ["all"] (all returns all files)
     '''

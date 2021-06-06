@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# the docker container under docker/yolcat-original installs the GDAL - the script below is redudant for docker development but it is kept FYI. 
+
 sudo add-apt-repository ppa:ubuntugis/ppa
 sudo apt-get update
 sudo apt-get install gdal-bin libgdal-dev
