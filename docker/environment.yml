@@ -10,10 +10,9 @@ dependencies:
   - cython 
   - pytorch::pytorch ==1.7
   - pytorch::torchvision==0.8.1
-  #- cudatoolkit-dev
-  #- cudnn
   - matplotlib
   - git # to download COCO dataset
+  - wget
   - curl # to download COCO dataset
   - unzip # to download COCO dataset
   - conda-forge::bash # to download COCO dataset
