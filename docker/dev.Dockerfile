@@ -71,7 +71,7 @@ ENV CONDA_DEFAULT_ENV=yolactpp-env
 ## Configure .bashrc to drop into a conda env and immediately activate our TARGET env
 RUN CONDA_DEFAULT_ENV=yolactpp-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
 
-WORKDIR /yolactpp
+WORKDIR /app
 ENTRYPOINT ["/conda_entry.sh"]
 
 
