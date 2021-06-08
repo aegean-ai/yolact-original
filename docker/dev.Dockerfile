@@ -47,12 +47,13 @@ ENV CONDA_PREFIX=/opt/conda
 ## before starting a new shell (which inherits the env).
 ## The exec is important! This allows signals to pass
 COPY    conda_run.sh /conda_run.sh
-COPY    entrypoint.sh /entrypoint.sh
-RUN     chmod +x /conda_run.sh && chmod +x /entrypoint.sh
+COPY    conda_entry.sh /conda_entry.sh
+RUN     chmod +x /conda_run.sh && chmod +x /conda_entry.sh
 
 ## Tell the docker build process to use this for RUN.
 ## The default shell on Linux is ["/bin/sh", "-c"], and on Windows is ["cmd", "/S", "/C"]
 SHELL ["/conda_run.sh"]
+
 ## Now, every following invocation of RUN will start with the entry script
 RUN     conda update -n base conda -y \
      &&  conda install -n base pip
@@ -73,6 +74,6 @@ RUN CONDA_DEFAULT_ENV=yolactpp-env conda init && echo 'conda activate "${CONDA_D
 
 WORKDIR /app
 
-ENTRYPOINT ["/entrypoint.sh"]
+ENTRYPOINT ["/conda_entry.sh"]
 
 
