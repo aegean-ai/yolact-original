@@ -1,60 +1,60 @@
 """
 Definitions:
-    > Region-File/Region-Image: This is any input image of arbitrary size that must be broken down into patches.
-    > Tile-Image: This is any subdivision of a World-Image. The default is 5000x5000.
-    > Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded 256x256
-    > The patch size is set according to the input tensor size for the Yolact Model
-    > Dataset
-      > Each project (like upabove) can be considered one dataset. For the current scope of the project, only 
+    * Region-File/Region-Image: This is any input image of arbitrary size that must be broken down into patches.
+    * Tile-Image: This is any subdivision of a World-Image. The default is 5000x5000.
+    * Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded 256x256
+    * The patch size is set according to the input tensor size for the Yolact Model
+    * Dataset
+      * Each project (like upabove) can be considered one dataset. For the current scope of the project, only 
       one dataset would be made i.e. for The NJ County. 
-      > It is possible that we want to work in a project similar to
+      * It is possible that we want to work in a project similar to
       upabove, say to do object detection on a completely new type of images i.e. we want to use the same pipeline for an entirely
       different project. 
-      > To ensure separation of this data, a new dataset can be made for the new project.
-      > The dataset is abbreviated as 'ds' throughout the documentation and code.
-    > Tileset
-      > Each batch of tiles can be considered as a tileset. A dataset may have multiple tilesets.
-      > Any new batch of data that arrives should be treated like a new tileset. 
-      > All Pipeline steps take the dataset and tileset information and process only the mentioned dataset and tileset. 
+      * To ensure separation of this data, a new dataset can be made for the new project.
+      * The dataset is abbreviated as 'ds' throughout the documentation and code.
+    * Tileset
+      * Each batch of tiles can be considered as a tileset. A dataset may have multiple tilesets.
+      * Any new batch of data that arrives should be treated like a new tileset. 
+      * All Pipeline steps take the dataset and tileset information and process only the mentioned dataset and tileset. 
       This ensures that we don't have to unnecessarily process any old data in the project.
-      > The tileset is abbreviated as 'ts' throughout the documentation and code.
+      * The tileset is abbreviated as 'ts' throughout the documentation and code.
 
 General Info:
-    > This file has the code to perform all steps of the pipeline.
-    > The individual steps can be found in our github documentation: docs.upabove.app/sidewalk/_index.md
-    > The configuration of the pipeline as well as the steps to perform are passed as terminal arguments 
+    * This file has the code to perform all steps of the pipeline.
+    * The individual steps can be found in our github documentation: docs.upabove.app/sidewalk/_index.md
+    * The configuration of the pipeline as well as the steps to perform are passed as terminal arguments 
 
 Structure:
-This code in this file is present in N sections:
-    1. Imports/Setup
-        > Has all imports required throughout the code.
-    2. Helper Functions
-        > Common functions used throughout the code.
-    3. Pipeline Funtions
-        > Each step of the pipeline is modularized as one function.
-        > The functions are meant to be completely independent i.e. as long as prequisite the data is present,
+    This code in this file is present in N sections:
+    Imports/Setup
+        * Has all imports required throughout the code.
+    Helper Functions
+        * Common functions used throughout the code.
+    Pipeline Funtions
+        * Each step of the pipeline is modularized as one function.
+        * The functions are meant to be completely independent i.e. as long as prequisite the data is present,
           They should run regardless of the fact that other pipeline steps have run before it.
-        > The pipeline Functions are further divided into 2 parts:
+        * The pipeline Functions are further divided into 2 parts:
             1. Data Pipeline Functions (Prior to Model Training)
             2. Model Evaluation and Verification Functions (After Model Training)
-    4. Main Function
+    Main Function
 
 Working logic of the Pipeline:
-    > Each pipeline step function works with one part of the pipeline. It has well defined input data and output data formats and locations.
+    * Each pipeline step function works with one part of the pipeline. It has well defined input data and output data formats and locations.
       This information is available as a comment over each pipeline function.
-    > Each step takes a set of parameters. These parameters are passed as arguments. The applicable arguments are also provided 
+    * Each step takes a set of parameters. These parameters are passed as arguments. The applicable arguments are also provided 
       as comments along with the functions.
 
 The complete Pipeline:
-    ### Data Pipeline
-    - loadTiles #TODO
-    - genImgPatches
-    - genAnnotations
-    ### MEVP Pipeline
-    - genInferenceJSON
-    - genInferenceData #TODO -> GeoJSON projections
-    - Cleaning and Metrics #TODO
-    - exportData #TODO
+    Data Pipeline
+    * loadTiles #TODO
+    * genImgPatches
+    * genAnnotations
+    MEVP Pipeline
+    * genInferenceJSON
+    * genInferenceData #TODO -> GeoJSON projections
+    * Cleaning and Metrics #TODO
+    * exportData #TODO
 
     Attributes: 
     
@@ -121,12 +121,12 @@ def vbPrint(s):
 
 def setConfig(argv):
     '''
-    > Takes the terminal arguments as input
-    > Sets configuration variable for the pipeline or sets pipeline step depending on argument signature
+    * Takes the terminal arguments as input
+    * Sets configuration variable for the pipeline or sets pipeline step depending on argument signature
 
     Argument Signatures:
-        > Configuration Variable    : --<KEY>=<VALUE>
-        > Pipeline Step             : -<PIPELINE_STEP>
+        * Configuration Variable    : --<KEY>=<VALUE>
+        * Pipeline Step             : -<PIPELINE_STEP>
     '''
     
     # This sets the types for each argument. Any new arguments that are not strings need to have their types defined.
@@ -253,14 +253,14 @@ def __time_this(func):                                                          
 @__time_this
 def loadFiles():
     '''
-    > This function loads all required files from S3.
-    > The files required at this stage of the pipeline would be the Tiles, Labels, and their World Files
-    > This code may have to change depending on how the Input data is available. 
+    * This function loads all required files from S3.
+    * The files required at this stage of the pipeline would be the Tiles, Labels, and their World Files
+    * This code may have to change depending on how the Input data is available. 
 
     [Code by John]
     Note:
         loads region data from s3 into the directory:
-            - ./data/<dataset>/region_<fileset>/
+            * ./data/<dataset>/region_<fileset>/
     
     Inputs:    
             ds (str): local dataset folder (root folder)
@@ -411,25 +411,25 @@ def genImgPatches():
     vbPrint(f"Number of files created in {patchesDir}: {len(patchFiles)}\n{'-'*4}Image Patches made successfuly{'-'*4}")
     
     '''
-    #Example:
-    python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=tif --sfmt=png --mWH=5000,5000 -genImgPatches
-    python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=jpg --sfmt=png --mWH=5000,5000 -genImgPatches
-    python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=gtiff --mWH=5000,5000 -genImgPatches
-    python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=tiff --mWH=5000,5000 -genImgPatches
-    python3 dataPipeline.py --ds=dataset8 --fs=labels --ts=labels --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
-    python3 dataPipeline.py --ds=dataset9 --fs=labels --ts=labels9 --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
+    Example:
+        * python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=tif --sfmt=png --mWH=5000,5000 -genImgPatches
+        * python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=jpg --sfmt=png --mWH=5000,5000 -genImgPatches
+        * python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=gtiff --mWH=5000,5000 -genImgPatches
+        * python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=tiff --mWH=5000,5000 -genImgPatches
+        * python3 dataPipeline.py --ds=dataset8 --fs=labels --ts=labels --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
+        * python3 dataPipeline.py --ds=dataset9 --fs=labels --ts=labels9 --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
     '''
 
 def genAnnotations():
     '''
-    > Generates the train and test annotations files using the image and label patches
+    Generates the train and test annotations files using the image and label patches
     
     Requirements:
-        > label patches should be available in <ds>/labelPatches_<ts>/..
-        > While not required by this function, corresponding image patches should be available in <ds>/imagePatches_<ts>/..
+        * label patches should be available in <ds>/labelPatches_<ts>/..
+        * While not required by this function, corresponding image patches should be available in <ds>/imagePatches_<ts>/..
 
     Generates:
-        > Two annotation files to be used by the model to train:
+        * Two annotation files to be used by the model to train:
             1. <ds>/annotations_<ts>/annotations_train.json
             2. <ds>/annotations_<ts>/annotations_test.json
 
@@ -492,8 +492,8 @@ def genAnnotations():
 #----------------------------------------------------------------#
 def genInferenceJSON():
     '''
-    > Uses shell commands to run the eval.py for the configured parameters of the pipeline
-    > This generates inferences in a JSON file saved in <ds>/inferencesJSON_<ts>/
+    Uses shell commands to run the eval.py for the configured parameters of the pipeline
+    This generates inferences in a JSON file saved in <ds>/inferencesJSON_<ts>/
     '''
     ds = config['ds']
     ts = config['ts']
@@ -523,48 +523,49 @@ def genInferenceJSON():
 
 def genInferenceData():
     '''
-    Generates Upto 2 types of inference data from the inferences JSON output by the model which is generated by genInferenceJSON():
-        1. Inference GeoJSON: a single geoJSON that has all the inferences as vector polygons. The file is a .geojson in <ds>/inferenceGeoJSON_<ts>
-        2. Inference Tiles: Merged inferences for each of the 5000x5000 tiles, each tile is available as a .png images in <ds>/inferenceTiles_<ts>
-    Requirements:
-        > The required annotation file must be present in <ds>/annotations_<ts>
-        > The inferences JSON generated by the model must be present in <ds>/inferencesJSON_<ts>/..
+    GenInferenceData Summary:
+        Generates Upto 2 types of inference data from the inferences JSON output by the model which is generated by genInferenceJSON():
+        * Inference GeoJSON: a single geoJSON that has all the inferences as vector polygons. The file is a .geojson in <ds>/inferenceGeoJSON_<ts>
+        * Inference Tiles: Merged inferences for each of the 5000x5000 tiles, each tile is available as a .png images in <ds>/inferenceTiles_<ts>
+        Requirements
+        * The required annotation file must be present in <ds>/annotations_<ts>
+        * The inferences JSON generated by the model must be present in <ds>/inferencesJSON_<ts>/..
     
-    Algorithm:
-        > The detections are available based on image_id. This id does not correspond to any tile or patch identification directly.
-        > The annotations file has, for each image_id, the associated tile number and patch co-ordinates encoded into the image name.
-        > We first read the entire annotations file and create a HashMap that stores, for each tile: a list of all patches' information.
-        > The information for a patch includes its image_id, its tile number, and its patch co-ordinates
-        > Once this hashMap is prepared, we are ready to iterate on a tile by tile basis:
-            > For each tile, we have the patch info for all patches. For each patch:
-                > We have the tile number which is the 'tile' itself
-                > We have raw image present with the name 'tile_<patch Co-ordinate X>_<patch Co-ordinate Y>'
-                > We have the associated patch detections with the 'image_id' in the inferences JSON
-            > Essentilly: We have a mapping between the tile and image_ids for all patches in the tile, for all tiles.
-            > For each patch:
-                > We have the detection vectors. This is in a COCO vector format and needs to be rasterized.
-                > For the 256x256 patch, we have many detections each with a score.
-                > We generate an empty image 256x256 image filled with 0s.
-                > For each detection, we rasterize the detection and add it to the raster image if it is above the configurable threshold.
-                > Sidewalk pixels are marked 255. If multiple detections mark the same pixel as a sidewalk, it is still 255.
-                > 255 was chosen instead of 1 for the sake of simplicity: If viewed as an image, this raster shows the sidewalk in white
+    GenInferenceData Algorithm:
+        * The detections are available based on image_id. This id does not correspond to any tile or patch identification directly.
+        * The annotations file has, for each image_id, the associated tile number and patch co-ordinates encoded into the image name.
+        * We first read the entire annotations file and create a HashMap that stores, for each tile: a list of all patches' information.
+        * The information for a patch includes its image_id, its tile number, and its patch co-ordinates
+        * Once this hashMap is prepared, we are ready to iterate on a tile by tile basis:
+            * For each tile, we have the patch info for all patches. For each patch:
+                * We have the tile number which is the 'tile' itself
+                * We have raw image present with the name 'tile_<patch Co-ordinate X>_<patch Co-ordinate Y>'
+                * We have the associated patch detections with the 'image_id' in the inferences JSON
+            * Essentilly: We have a mapping between the tile and image_ids for all patches in the tile, for all tiles.
+            * For each patch:
+                * We have the detection vectors. This is in a COCO vector format and needs to be rasterized.
+                * For the 256x256 patch, we have many detections each with a score.
+                * We generate an empty image 256x256 image filled with 0s.
+                * For each detection, we rasterize the detection and add it to the raster image if it is above the configurable threshold.
+                * Sidewalk pixels are marked 255. If multiple detections mark the same pixel as a sidewalk, it is still 255.
+                * 255 was chosen instead of 1 for the sake of simplicity: If viewed as an image, this raster shows the sidewalk in white
                   with a black background very clearly.
-            > Essentilly: For each 'image_id' (i.e. for each patch), we now have a rasterized inference.
-            > For each tile:
-                > We now go through the all of patches, pull their rasters from the HashMap.
-                > Since the patch information includes the co-ordinates of a patch in a tile, we know the indexes of the 256x256 block in the 5120x5120 tile.
-                > Using this info, we generate a single 5120x5120 raster for each tile. This is then cropped to 5000x500px similar to year-1.
-                > Generation of the GeoJSON:
-                    > Since we know the tile i.e. the path and name of the tile image, we can infer the path and name of the respective world file
-                    > The Raster can be converted into polygon vectors
-                    > For each detected polygon of >3 points, it is added into the geoJSON.
-                    > The geoJSON file is initialized at the start of the code, opened for processing each tile and closed. 
-        > Once all the tiles are processed, the appropriate line endings are appended to the geoJSON.
+            * Essentilly: For each 'image_id' (i.e. for each patch), we now have a rasterized inference.
+            * For each tile:
+                * We now go through the all of patches, pull their rasters from the HashMap.
+                * Since the patch information includes the co-ordinates of a patch in a tile, we know the indexes of the 256x256 block in the 5120x5120 tile.
+                * Using this info, we generate a single 5120x5120 raster for each tile. This is then cropped to 5000x500px similar to year-1.
+                * Generation of the GeoJSON:
+                    * Since we know the tile i.e. the path and name of the tile image, we can infer the path and name of the respective world file
+                    * The Raster can be converted into polygon vectors
+                    * For each detected polygon of >3 points, it is added into the geoJSON.
+                    * The geoJSON file is initialized at the start of the code, opened for processing each tile and closed. 
+        * Once all the tiles are processed, the appropriate line endings are appended to the geoJSON.
 
-    Notes:
-        > The saving images can be skipped the argument '--genImgs=0'
-        > The generation of geoJSON can be skipped with the argument '--genGeoJSON=0'
-        > If both arguments are provided, nothing is saved. (Possible use-case is for debugging)
+    GenInferenceData Notes:
+        * The saving images can be skipped the argument '--genImgs=0'
+        * The generation of geoJSON can be skipped with the argument '--genGeoJSON=0'
+        * If both arguments are provided, nothing is saved. (Possible use-case is for debugging)
     '''
     ds = config['ds']
     ts = config['ts']
@@ -820,17 +821,13 @@ if __name__ == '__main__':
                                     For example: 0.1 means at every 10% completion, a print is made. (Only works if --verbose is set to 1). Default: 0.1
 
     Examples:
-        - Training Pipeline
-            ```bash
-            python dataPipeline.py --ds=ds1 --ts=train -loadTiles --s3td=test -genImgPatches -genLabelPatches -genAnnotations
-            ```
+        Training Pipeline
+        * python dataPipeline.py --ds=ds1 --ts=train -loadTiles --s3td=test -genImgPatches -genLabelPatches -genAnnotations
 
-        - MEVP Pipeline
-            ```bash
-            python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgPatches -genAnnotations
-            python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
-            python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceData --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
-            ```
+        MEVP Pipeline
+        * python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgPatches -genAnnotations
+        * python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
+        * python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceData --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
     '''
     setConfig(sys.argv)
     vbPrint('Configuration set:')
