@@ -120,14 +120,14 @@ def vbPrint(s):
         print(s)
 
 def setConfig(argv):
-    '''
+    """
     * Takes the terminal arguments as input
     * Sets configuration variable for the pipeline or sets pipeline step depending on argument signature
 
     Argument Signatures:
         * Configuration Variable    : --<KEY>=<VALUE>
         * Pipeline Step             : -<PIPELINE_STEP>
-    '''
+    """
     
     # This sets the types for each argument. Any new arguments that are not strings need to have their types defined.
     # The arguments will be parsed as these, if not parsable in the below format, the program will terminate.
@@ -252,7 +252,7 @@ def __time_this(func):                                                          
 #----------------------------------------------------------------#
 @__time_this
 def loadFiles():
-    '''
+    """
     * This function loads all required files from S3.
     * The files required at this stage of the pipeline would be the Tiles, Labels, and their World Files
     * This code may have to change depending on how the Input data is available. 
@@ -267,7 +267,7 @@ def loadFiles():
             fs (str): local fileset folder (sub folder)
             s3td (str): bucket path to files
             fmts (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png'], "all" -> ["all"] (all returns all files)
-    '''
+    """
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset string. root folder of files
     fs = config['fs']                                                           #fileset string. folder to hold world files
@@ -292,14 +292,14 @@ def loadFiles():
     
     vbPrint('Loading Region File(s) Completed')
     
-    '''
+    """
     #Examples:
     python3 dataPipeline.py --ds=dataset7 --fs=inputs --fmts=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
     
     python3 dataPipeline.py --ds=dataset7 --fs=labels --fmts=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
     
     python3 dataPipeline.py --ds=dataset7 --fs=vectors --fmts=geojson --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/vector_files/ -loadFiles 
-    '''
+    """
 
 
     
@@ -307,7 +307,7 @@ def loadFiles():
     
 @__time_this  
 def genImgPatches():
-    '''
+    """
     [Code by John]
     Notes: 
         Generates image patches by splitting the tiles
@@ -323,7 +323,7 @@ def genImgPatches():
     
     outputs:
         folder containing patch image-files and any support files. 
-    '''
+    """
 
     ##----------------------------Configuration/Setup---------------------------##
     ds = config['ds']                                                           #dataset (root folder)
@@ -410,7 +410,7 @@ def genImgPatches():
                            
     vbPrint(f"Number of files created in {patchesDir}: {len(patchFiles)}\n{'-'*4}Image Patches made successfuly{'-'*4}")
     
-    '''
+    """
     Example:
         * python3 dataPipeline.py --ds=dataset5 --fs=labels --fmts=tif --sfmt=png --mWH=5000,5000 -genImgPatches
         * python3 dataPipeline.py --ds=dataset5 --fs=inputs --fmts=jpg --sfmt=png --mWH=5000,5000 -genImgPatches
@@ -418,10 +418,10 @@ def genImgPatches():
         * python3 dataPipeline.py --ds=dataset7 --fs=labels --ts=labels --fmts=tif --sfmt=tiff --mWH=5000,5000 -genImgPatches
         * python3 dataPipeline.py --ds=dataset8 --fs=labels --ts=labels --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
         * python3 dataPipeline.py --ds=dataset9 --fs=labels --ts=labels9 --fmts=gtiff --sfmt=gtiff --mWH=5000,5000 -genImgPatches
-    '''
+    """
 
 def genAnnotations():
-    '''
+    """
     Generates the train and test annotations files using the image and label patches
     
     Requirements:
@@ -433,7 +433,7 @@ def genAnnotations():
             1. <ds>/annotations_<ts>/annotations_train.json
             2. <ds>/annotations_<ts>/annotations_test.json
 
-    '''
+    """
     ds = config['ds']
     ts = config['ts']
     tvRatio = config['tvRatio']
@@ -491,10 +491,10 @@ def genAnnotations():
 #--------- Model Evaluation and Verification Functions ----------#
 #----------------------------------------------------------------#
 def genInferenceJSON():
-    '''
+    """
     Uses shell commands to run the eval.py for the configured parameters of the pipeline
     This generates inferences in a JSON file saved in <ds>/inferencesJSON_<ts>/
-    '''
+    """
     ds = config['ds']
     ts = config['ts']
 
@@ -522,7 +522,7 @@ def genInferenceJSON():
     vbPrint('Completed')
 
 def genInferenceData():
-    '''
+    """
     GenInferenceData Summary:
         Generates Upto 2 types of inference data from the inferences JSON output by the model which is generated by genInferenceJSON():
         * Inference GeoJSON: a single geoJSON that has all the inferences as vector polygons. The file is a .geojson in <ds>/inferenceGeoJSON_<ts>
@@ -566,7 +566,7 @@ def genInferenceData():
         * The saving images can be skipped the argument '--genImgs=0'
         * The generation of geoJSON can be skipped with the argument '--genGeoJSON=0'
         * If both arguments are provided, nothing is saved. (Possible use-case is for debugging)
-    '''
+    """
     ds = config['ds']
     ts = config['ts']
     tilesDir = '%s/tiles_%s'%(ds,ts)
@@ -673,10 +673,10 @@ def genInferenceData():
     n = len(tileMap.keys())
     peFactor = config['pef']
 
-    '''
+    """
     For each tile, gets the detection masks and merges them into one image.
     It seems that many patches are missing in inferences. It is assumed these don't have any detections and are skipped.
-    '''
+    """
     for i,tile in enumerate(tileMap.keys()):
         # Skipping tile if unexpected number of patches exist for the tile in the annotations JSON
         expectedPatches = rows*cols
@@ -786,7 +786,7 @@ def genInferenceData():
         vbPrint('Inference Data ran successfully. Nothing saved due to arguments passed.')
 
 if __name__ == '__main__':
-    '''
+    """
     Argument Formats:
         --<KEY>=<VALUE>     -> Used to set config
         -<PipelineStep>     -> Used to set pipeline Steps
@@ -828,7 +828,7 @@ if __name__ == '__main__':
         * python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgPatches -genAnnotations
         * python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
         * python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceData --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
-    '''
+    """
     setConfig(sys.argv)
     vbPrint('Configuration set:')
     for key in config:
