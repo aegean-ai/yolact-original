@@ -63,7 +63,8 @@ COPY ./environment.yml /tmp/environment.yml
 RUN conda env create -f /tmp/environment.yml
 
 # install GDAL - this is needed here as its currebtly unknown how to pass the options in the environment.yml file
-RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
+# replaced with conda gdal
+#RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
 
 ## I added this variable such that I have the entry script activate a specific env
 ENV CONDA_DEFAULT_ENV=yolactpp-env
@@ -71,7 +72,8 @@ ENV CONDA_DEFAULT_ENV=yolactpp-env
 ## Configure .bashrc to drop into a conda env and immediately activate our TARGET env
 RUN CONDA_DEFAULT_ENV=yolactpp-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
 
-WORKDIR /yolactpp
+WORKDIR /app
+
 ENTRYPOINT ["/conda_entry.sh"]
 
 
