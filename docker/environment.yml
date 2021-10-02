@@ -51,5 +51,6 @@ dependencies:
     - nbsphinx
     - myst-parser
     - sphinx-argparse
+    - sphinxcontrib-youtube
 
 
