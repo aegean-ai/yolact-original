@@ -52,5 +52,5 @@ dependencies:
     - myst-parser
     - sphinx-argparse
     - sphinxcontrib-youtube
-
+    - wget
 
