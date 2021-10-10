@@ -97,7 +97,7 @@ if __name__ == '__main__':
         --ds                -> [dataset name] The datset name. This will be used to create the file directory and refer to the dataset.
         --ts                -> [tileset name] Name of the tileset. This will be used to create the unique tiles and images folder.
                                     Separate tile and image folders are needed to separate training data from inference data.
-                                    This also allows speration of inference set. Ex of values for ts: train,test, XYZ_County_inference, PQR_Inference, etc.
+                                    This also allows separation of inference set. Ex of values for ts: train,test, XYZ_County_inference, PQR_Inference, etc.
         -<PipelineStep>     -> [Function Name] name of the function to call in the pipeline step. Multiple can be passed to create the pipeline.
 
     LoadTiles Arguments:

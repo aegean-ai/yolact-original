@@ -29,7 +29,7 @@ RUN apt-get update && \
 # RUN git clone --recurse-submodules https://github.com/upabove-app/yolact-original.git /yolactpp
 
 # set pythonpath
-ENV PYTHONPATH=/yolactpp:${PYTHONPATH}
+ENV PYTHONPATH=/sidewalk:${PYTHONPATH}
 
 #RUN ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh
 
@@ -51,14 +51,13 @@ ENV CONDA_PREFIX=/opt/conda
 # SHELL ["/conda_run.sh"]
 
 ## Now, every following invocation of RUN will start with the entry script
-RUN     conda update -n base conda -y \
-     &&  conda install -n base pip
+# RUN     conda update -n base conda -y \
+#      &&  conda install -n base pip
 
 # Create the conda environment. 
+RUN conda config --set channel_priority strict
 COPY ./environment.yml /tmp/environment.yml
 RUN conda env create -f /tmp/environment.yml
-
-
 RUN /opt/conda/bin/conda clean -ya
 
 # install GDAL - this is needed here as its currebtly unknown how to pass the options in the environment.yml file
@@ -66,10 +65,10 @@ RUN /opt/conda/bin/conda clean -ya
 #RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
 
 ## I added this variable such that I have the entry script activate a specific env
-ENV CONDA_DEFAULT_ENV=yolactpp-env
+ENV CONDA_DEFAULT_ENV=sidewalk-env
 
 ## Configure .bashrc to drop into a conda env and immediately activate our TARGET env
-RUN CONDA_DEFAULT_ENV=yolactpp-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
+RUN CONDA_DEFAULT_ENV=sidewalk-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
 
 
 ENV LD_LIBRARY_PATH /opt/conda/lib:/opt/conda/envs/cresi/lib:${LD_LIBRARY_PATH}

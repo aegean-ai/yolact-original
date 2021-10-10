@@ -1,5 +1,5 @@
-name: yolactpp-env
-prefix: /opt/conda/envs/yolactpp-env
+name: sidewalk-env
+prefix: /opt/conda/envs/sidewalk-env
 channels:
   - conda-forge
   - pytorch
@@ -45,12 +45,5 @@ dependencies:
     - Shapely==1.7.1
     - https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
     - planar
-    - sphinx
-    - sphinx-rtd-theme
-    - sphinx-autobuild
-    - nbsphinx
-    - myst-parser
-    - sphinx-argparse
-    - sphinxcontrib-youtube
     - wget
 
