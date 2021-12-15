@@ -2,24 +2,11 @@ name: sidewalk-env
 prefix: /opt/conda/envs/sidewalk-env
 channels:
   - conda-forge
-  - pytorch
   - defaults
 dependencies:
-  - python==3.8
   - pip
-  - cython 
-  - pytorch::pytorch ==1.7
-  - pytorch::torchvision==0.8.1
-  - matplotlib
-  - git # to download COCO dataset
-  - wget
-  - curl # to download COCO dataset
-  - unzip # to download COCO dataset
-  - conda-forge::bash # to download COCO dataset
   - proj
-  - proj-data
-  - gdal
-  - geopandas
+  - unzip
   - pip:
     - opencv-python 
     - pillow <7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
@@ -46,4 +33,6 @@ dependencies:
     - https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
     - planar
     - wget
-
+    - geopandas
+    - pycocotools
+    - GDAL==2.2.3

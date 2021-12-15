@@ -1,10 +1,10 @@
-ARG PYTORCH="1.7.0"
-ARG CUDA="11.0"
+ARG PYTORCH="1.9.0"
+ARG CUDA="11.1"
 ARG CUDNN="8"
 
 FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 
-ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0+PTX"
+ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 8.0 8.6"
 ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
 ENV CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
 ENV CUDA_HOME=/usr/local/cuda
@@ -25,13 +25,11 @@ RUN apt-get update && \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
+ENV C_INCLUDE_PATH=/usr/include/gdal
+RUN gdal-config --version
 # Note that yolactpp is using DCNv2 and this is a submodule - in the .gitmodules files we list the specific branch (pytorch version that we need)
 # RUN git clone --recurse-submodules https://github.com/upabove-app/yolact-original.git /yolactpp
-
-# set pythonpath
-ENV PYTHONPATH=/sidewalk:${PYTHONPATH}
-
-#RUN ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh
 
 ## add conda to the path so we can execute it by name
 ENV PATH=${CONDA_PREFIX}/bin:${PATH}
@@ -39,47 +37,44 @@ ENV PATH=${CONDA_PREFIX}/bin:${PATH}
 # The code to run when container is started:
 ENV CONDA_PREFIX=/opt/conda
 
-## Create /entry.sh which will be our new shell entry point. This performs actions to configure the environment
-## before starting a new shell (which inherits the env).
-## The exec is important! This allows signals to pass
-#COPY    conda_run.sh /conda_run.sh
-#COPY    conda_entry.sh /conda_entry.sh
-#RUN     chmod +x /conda_run.sh && chmod +x /conda_entry.sh
+# # Create the conda environment. 
+# RUN conda config --set channel_priority strict
 
-## Tell the docker build process to use this for RUN.
-## The default shell on Linux is ["/bin/sh", "-c"], and on Windows is ["cmd", "/S", "/C"]
-# SHELL ["/conda_run.sh"]
+# RUN conda update -n base -c defaults conda
 
-## Now, every following invocation of RUN will start with the entry script
-# RUN     conda update -n base conda -y \
-#      &&  conda install -n base pip
+RUN conda create --name sidewalk-env --clone base
 
-# Create the conda environment. 
-RUN conda config --set channel_priority strict
+# #COPY ./requirements.txt /tmp/requirements.txt
+# #RUN pip3 install -r /tmp/requirements.txt
+
 COPY ./environment.yml /tmp/environment.yml
-RUN conda env create -f /tmp/environment.yml
+RUN conda env update  --file /tmp/environment.yml
+
 RUN /opt/conda/bin/conda clean -ya
 
-# install GDAL - this is needed here as its currebtly unknown how to pass the options in the environment.yml file
-# replaced with conda gdal
-#RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
+# # install GDAL - this is needed here as its currebtly unknown how to pass the options in the environment.yml file
+# # replaced with conda gdal
 
-## I added this variable such that I have the entry script activate a specific env
+# RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
+
+# ## I added this variable such that I have the entry script activate a specific env
 ENV CONDA_DEFAULT_ENV=sidewalk-env
 
-## Configure .bashrc to drop into a conda env and immediately activate our TARGET env
+# ## Configure .bashrc to drop into a conda env and immediately activate our TARGET env
 RUN CONDA_DEFAULT_ENV=sidewalk-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
 
 
-ENV LD_LIBRARY_PATH /opt/conda/lib:/opt/conda/envs/cresi/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/opt/conda/lib:/opt/conda/envs/sidewalk-env/lib:${LD_LIBRARY_PATH}
 
 RUN apt-get update -y && apt-get install -y libgl1-mesa-glx
 
 RUN /opt/conda/bin/conda clean -ya
 
 #  PATH into conda environment
-ENV PATH /opt/conda/envs/$CONDA_DEFAULT_ENV/bin:$PATH
+ENV PATH=/opt/conda/envs/$CONDA_DEFAULT_ENV/bin:$PATH
 
+# set pythonpath
+ENV PYTHONPATH=/workspace/sidewalk:${PYTHONPATH}
 
 # specify vscode as the user name in the docker
 # This user name should match that of the VS Code .devcontainer to allow seamless development inside the docker container via vscode 
@@ -117,7 +112,7 @@ EXPOSE 8100
 WORKDIR /${USERNAME}/.config/matplotlib
 RUN echo "backend : Agg" >> matplotlibrc
 
-WORKDIR /workspaces/sidewalk
+WORKDIR /workspace/sidewalk
 #ENTRYPOINT ["/conda_entry.sh"]
 
 
