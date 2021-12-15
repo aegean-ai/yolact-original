@@ -74,7 +74,7 @@ RUN /opt/conda/bin/conda clean -ya
 ENV PATH=/opt/conda/envs/$CONDA_DEFAULT_ENV/bin:$PATH
 
 # set pythonpath
-ENV PYTHONPATH=/workspace/sidewalk:${PYTHONPATH}
+ENV PYTHONPATH=/workspaces/sidewalk-detection:${PYTHONPATH}
 
 # specify vscode as the user name in the docker
 # This user name should match that of the VS Code .devcontainer to allow seamless development inside the docker container via vscode 
@@ -112,7 +112,7 @@ EXPOSE 8100
 WORKDIR /${USERNAME}/.config/matplotlib
 RUN echo "backend : Agg" >> matplotlibrc
 
-WORKDIR /workspace/sidewalk
+WORKDIR /workspaces/sidewalk-detection
 #ENTRYPOINT ["/conda_entry.sh"]
 
 
