@@ -79,7 +79,7 @@ ENV PYTHONPATH=/workspaces/sidewalk-detection:${PYTHONPATH}
 # specify vscode as the user name in the docker
 # This user name should match that of the VS Code .devcontainer to allow seamless development inside the docker container via vscode 
 ARG USERNAME=vscode
-ARG USER_UID=1000
+ARG USER_UID=1001
 ARG USER_GID=$USER_UID
 
 # Create a non-root user
@@ -104,9 +104,6 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 
 # certain doc building tools such as sphinx and others are installed in local bin folder
 ENV PATH="/home/USERNAME/.local/bin:${PATH}"
-
-# Expose ports needed for development
-EXPOSE 8100
 
 # Specify matplotlib backend
 WORKDIR /${USERNAME}/.config/matplotlib
