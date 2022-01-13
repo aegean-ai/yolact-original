@@ -2,19 +2,17 @@
 Notes:
     This module facilitates loading files from and saving files to s3 buckets 
 
+example:
 
-ex URI:
-    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/
-    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/test.txt
+load_s3_to_local(s3_uri="s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
+                desired_formats=['txt'],
+                load_dir='cwd',
+                verbose=True)
 
-Bucket methods:
-s3.Bucket(name='cv.datasets.aegean.ai')
-['Acl', 'Cors', 'Lifecycle', 'LifecycleConfiguration', 'Logging', 'Notification', 'Object', 'Policy', 'RequestPayment', 'Tagging', 'Versioning', 'Website', '__class__', 
-'__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', 
-'__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_name', 'copy', 'create', 
-'creation_date', 'delete', 'delete_objects', 'download_file', 'download_fileobj', 'get_available_subresources', 'load', 'meta', 'multipart_uploads', 'name', 'object_versions', 'objects', 
-'put_object', 'upload_file', 'upload_fileobj', 'wait_until_exists', 'wait_until_not_exists']
-
+load_local_to_s3(local_folder='cwd',
+                 file_formats=['txt'],
+                 s3_uri="s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
+                 verbose=True)
 
 """
 
@@ -164,17 +162,3 @@ def load_local_to_s3(local_folder:str,file_formats:list,s3_uri:str,verbose:bool)
     
 
 
-"""
-example:
-
-load_s3_to_local(s3_uri="s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
-                desired_formats=['txt'],
-                load_dir='cwd',
-                verbose=True)
-
-load_local_to_s3(local_folder='cwd',
-                 file_formats=['txt'],
-                 s3_uri="s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
-                 verbose=True)
-
-"""

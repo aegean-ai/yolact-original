@@ -18,7 +18,7 @@ def get_label_map():
 
 class COCOAnnotationTransform(object):
     """Transforms a COCO annotation into a Tensor of bbox coords and label index
-    Initilized with a dictionary lookup of classnames to indexes
+    Initialized with a dictionary lookup of classnames to indexes
     """
     def __init__(self):
         self.label_map = get_label_map()

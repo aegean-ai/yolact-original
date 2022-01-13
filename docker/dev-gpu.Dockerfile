@@ -28,39 +28,31 @@ RUN apt-get update && \
 ENV CPLUS_INCLUDE_PATH=/usr/include/gdal
 ENV C_INCLUDE_PATH=/usr/include/gdal
 RUN gdal-config --version
+
 # Note that yolactpp is using DCNv2 and this is a submodule - in the .gitmodules files we list the specific branch (pytorch version that we need)
 # RUN git clone --recurse-submodules https://github.com/upabove-app/yolact-original.git /yolactpp
-
-## add conda to the path so we can execute it by name
-ENV PATH=${CONDA_PREFIX}/bin:${PATH}
 
 # The code to run when container is started:
 ENV CONDA_PREFIX=/opt/conda
 
-# # Create the conda environment. 
-# RUN conda config --set channel_priority strict
-
-# RUN conda update -n base -c defaults conda
+## add conda to the path so we can execute it by name
+ENV PATH=${CONDA_PREFIX}/bin:${PATH}
 
 RUN conda create --name sidewalk-env --clone base
-
-# #COPY ./requirements.txt /tmp/requirements.txt
-# #RUN pip3 install -r /tmp/requirements.txt
 
 COPY ./environment.yml /tmp/environment.yml
 RUN conda env update  --file /tmp/environment.yml
 
 RUN /opt/conda/bin/conda clean -ya
 
+# #This is now  replaced with conda gdal but kept here temporarily
 # # install GDAL - this is needed here as its currebtly unknown how to pass the options in the environment.yml file
-# # replaced with conda gdal
-
 # RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
 
-# ## I added this variable such that I have the entry script activate a specific env
+# the specific env
 ENV CONDA_DEFAULT_ENV=sidewalk-env
 
-# ## Configure .bashrc to drop into a conda env and immediately activate our TARGET env
+# Configure .bashrc to drop into a conda env and immediately activate our TARGET env
 RUN CONDA_DEFAULT_ENV=sidewalk-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
 
 
@@ -103,13 +95,12 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
     && echo $SNIPPET >> "/home/$USERNAME/.bashrc"
 
 # certain doc building tools such as sphinx and others are installed in local bin folder
-ENV PATH="/home/USERNAME/.local/bin:${PATH}"
+ENV PATH="/home/$USERNAME/.local/bin:${PATH}"
 
 # Specify matplotlib backend
 WORKDIR /${USERNAME}/.config/matplotlib
 RUN echo "backend : Agg" >> matplotlibrc
 
 WORKDIR /workspaces/sidewalk-detection
-#ENTRYPOINT ["/conda_entry.sh"]
 
 

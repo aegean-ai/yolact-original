@@ -36,3 +36,5 @@ dependencies:
     - geopandas
     - pycocotools
     - GDAL==2.2.3
+    - mlflow
+    - pylint
