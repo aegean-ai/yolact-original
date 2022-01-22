@@ -21,7 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg libsm6 git ninja-build libglib2.0-0  libxrender-dev libxext6  build-essential python3-dev  binutils libproj-dev gdal-bin libgdal-dev \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y ffmpeg libsm6 git ninja-build libglib2.0-0  libxrender-dev libxext6  build-essential python3-dev  binutils libproj-dev gdal-bin libgdal-dev libcurl4\
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,9 +30,8 @@ ENV C_INCLUDE_PATH=/usr/include/gdal
 RUN gdal-config --version
 
 # Note that yolactpp is using DCNv2 and this is a submodule - in the .gitmodules files we list the specific branch (pytorch version that we need)
-# RUN git clone --recurse-submodules https://github.com/upabove-app/yolact-original.git /yolactpp
+RUN git clone --recurse-submodules https://github.com/upabove-app/yolact-original.git /yolactpp
 
-# The code to run when container is started:
 ENV CONDA_PREFIX=/opt/conda
 
 ## add conda to the path so we can execute it by name
@@ -86,7 +85,7 @@ RUN groupadd --gid $USER_GID $USERNAME \
   && rm -rf /var/lib/apt/lists/* \
   # Set up git completion.
   && echo "source /usr/share/bash-completion/completions/git" >> /home/$USERNAME/.bashrc 
-ENV DEBIAN_FRONTEND=
+#ENV DEBIAN_FRONTEND=
 
 RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
     && mkdir /commandhistory \

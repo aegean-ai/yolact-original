@@ -38,3 +38,5 @@ dependencies:
     - GDAL==2.2.3
     - mlflow
     - pylint
+    - webdataset
+    - fiftyone

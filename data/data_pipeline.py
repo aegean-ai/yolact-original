@@ -19,7 +19,6 @@ def loadFiles():
     * The files required at this stage of the pipeline would be the Tiles, Labels, and their World Files
     * This code may have to change depending on how the Input data is available. 
 
-    [Code by John]
     Note:
         loads region data from s3 into the directory:
             * ./data/<dataset>/region_<fileset>/
@@ -67,7 +66,6 @@ def loadFiles():
 @__time_this  
 def genImgPatches():
     """
-    [Code by John]
     Notes: 
         Generates image patches by splitting the tiles
         Prerequisite: loadFiles() has been run or tiles are present in the data/<dataset>/tiles directory

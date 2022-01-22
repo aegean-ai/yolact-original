@@ -129,15 +129,29 @@ dataset_base = Config({
 })
 
 # -------- DVRPC Dataset ---------- *
+# dvrpc_dataset = dataset_base.copy({
+#     'name': 'DPRVC Dataset',
+
+#     # "/data/images" refers to the directory inside the docker container
+#     'train_images': './data/dvrpc/images',
+#     'train_info':   './data/dvrpc/annotations/DVRPC_train.json',
+
+#     'valid_images': './data/dvrpc/images',
+#     'valid_info':   './data/dvrpc/annotations/DVRPC_test.json',
+
+#     'has_gt': True,
+#     'class_names': ('sidewalk')
+# })
+
 dvrpc_dataset = dataset_base.copy({
-    'name': 'DPRVC Dataset',
+    'name': 'DPRVC Pedestrian Network PA Only 2020 Dataset',
 
     # "/data/images" refers to the directory inside the docker container
-    'train_images': './data/dvrpc/images',
-    'train_info':   './data/dvrpc/annotations/DVRPC_train.json',
+    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/Train',
+    'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/DVRPC_train.json',
 
-    'valid_images': './data/dvrpc/images',
-    'valid_info':   './data/dvrpc/annotations/DVRPC_test.json',
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/Test',
+    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/DVRPC_test.json',
 
     'has_gt': True,
     'class_names': ('sidewalk')

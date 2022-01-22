@@ -1,17 +1,18 @@
 """
 Definitions:
-    * Region-File/Region-Image: This is any input image of arbitrary size that must be broken down into patches.
-    * Tile-Image: This is any subdivision of a World-Image. The default is 5000x5000.
+    * Region-File/Region-Image: This is any input image of arbitrary size that is broken down into tiles.
+    * Tile-Image: Tiles are what a regional image is divided to.  The default tile size is 5000x5000.
     * Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded 256x256
     * The patch size is set according to the input tensor size for the Yolact Model
+    
     * Dataset
-      * Each project (like upabove) can be considered one dataset. For the current scope of the project, only 
-      one dataset would be made i.e. for NJ. 
+      * Each project can be considered one dataset. 
       * It is possible that we want to work in a project similar to
-      upabove, say to do object detection on a completely new type of images i.e. we want to use the same pipeline for an entirely
+      a previous one, eg to do object detection on a completely new type of images i.e. we want to use the same pipeline for an entirely
       different project. 
-      * To ensure separation of this data, a new dataset can be made for the new project.
+      * To ensure separation of this data, a new dataset can be generated for a new project.
       * The dataset is abbreviated as 'ds' throughout the documentation and code.
+    
     * Tileset
       * Each batch of tiles can be considered as a tileset. A dataset may have multiple tilesets.
       * Any new batch of data that arrives should be treated like a new tileset. 
