@@ -16,7 +16,7 @@ import json
 def loadFiles():
     """
     * This function loads all required files from S3.
-    * The files required at this stage of the pipeline would be the Tiles, Labels, and their World Files
+    * The files required at this stage of the pipeline are the tiles, labels, and their corresponding world files
     * This code may have to change depending on how the Input data is available. 
 
     Note:
@@ -55,11 +55,11 @@ def loadFiles():
     
     """
     #Examples:
-    python3 dataPipeline.py --ds=dataset7 --fs=inputs --fmts=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
+    python3 dataPipeline.py --ds=dataset7 --fs=inputs --fmts=all --s3d=s3://njtpa.auraison.aegean.ai/DOM2015/Selected_500/pipelineTest/ -loadFiles
     
-    python3 dataPipeline.py --ds=dataset7 --fs=labels --fmts=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
+    python3 dataPipeline.py --ds=dataset7 --fs=labels --fmts=all --s3d=s3://njtpa.auraison.aegean.ai/labels_ground_truth/year-2/output/ -loadFiles
     
-    python3 dataPipeline.py --ds=dataset7 --fs=vectors --fmts=geojson --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/vector_files/ -loadFiles 
+    python3 dataPipeline.py --ds=dataset7 --fs=vectors --fmts=geojson --s3d=s3://njtpa.auraisonaegean.ai/labels_ground_truth/year-2/vector_files/ -loadFiles 
     """
 
     
@@ -241,4 +241,4 @@ def genAnnotations():
     del valJSON
     del valR2C
 
-    vbPrint('Annotations made and saved successfuly')
+    vbPrint('Annotations made and saved successfully')

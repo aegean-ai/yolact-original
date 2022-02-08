@@ -4,7 +4,7 @@ ARG CUDNN="8"
 
 FROM pytorch/pytorch:${PYTORCH}-cuda${CUDA}-cudnn${CUDNN}-devel
 
-ENV TORCH_CUDA_ARCH_LIST="6.0 6.1 7.0 8.0 8.6"
+ENV TORCH_CUDA_ARCH_LIST="6.1 8.6"
 ENV TORCH_NVCC_FLAGS="-Xfatbin -compress-all"
 ENV CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
 ENV CUDA_HOME=/usr/local/cuda
@@ -30,7 +30,7 @@ ENV C_INCLUDE_PATH=/usr/include/gdal
 RUN gdal-config --version
 
 # Note that yolactpp is using DCNv2 and this is a submodule - in the .gitmodules files we list the specific branch (pytorch version that we need)
-RUN git clone --recurse-submodules https://github.com/upabove-app/yolact-original.git /yolactpp
+RUN git clone --recurse-submodules -b model-performance-verification https://github.com/upabove-app/yolact-original.git /yolactpp
 
 ENV CONDA_PREFIX=/opt/conda
 

@@ -1,10 +1,4 @@
 from osgeo import gdal, gdalnumeric, ogr, gdal_array
-#import sys
-#sys.path.append(r'C:\Program Files\GDAL')
-
-
-# import ogr
-# import gdal_array
 from skimage import measure
 import numpy as np
 import json

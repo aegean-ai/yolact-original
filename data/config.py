@@ -146,7 +146,6 @@ dataset_base = Config({
 dvrpc_dataset = dataset_base.copy({
     'name': 'DPRVC Pedestrian Network PA Only 2020 Dataset',
 
-    # "/data/images" refers to the directory inside the docker container
     'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/Train',
     'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/DVRPC_train.json',
 
