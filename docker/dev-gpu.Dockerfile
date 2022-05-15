@@ -14,6 +14,9 @@ ENV NVIDIA_VISIBLE_DEVICES="all"
 ENV NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute
 ENV QT_X11_NO_MITSHM 1
 
+# Set this until this is resolved https://github.com/pytorch/pytorch/issues/37377 or package versions are fixed
+ENV 'MKL_THREADING_LAYER' = 'GNU'
+
 # Keeps Python from generating .pyc files in the container
 ENV PYTHONDONTWRITEBYTECODE=1
 
@@ -66,6 +69,11 @@ ENV PATH=/opt/conda/envs/$CONDA_DEFAULT_ENV/bin:$PATH
 
 # set pythonpath
 ENV PYTHONPATH=/workspaces/sidewalk-detection:${PYTHONPATH}
+
+# Compile 
+RUN cd /workspaces/sidewalk-detection/segmentation/yolact-original/external/DCNv2_latest && \
+    python setup.py build develop && \
+    rm -Rf /root/.cache/pip
 
 # specify vscode as the user name in the docker
 # This user name should match that of the VS Code .devcontainer to allow seamless development inside the docker container via vscode 

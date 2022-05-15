@@ -108,7 +108,7 @@ def parse_args(argv=None):
     parser.add_argument('--dataset', default=None, type=str,
                         help='If specified, override the dataset specified in the config with this one (example: coco2017_dataset).')
     parser.add_argument('--detect', default=False, dest='detect', action='store_true',
-                        help='Don\'t evauluate the mask branch at all and only do object detection. This only works for --display and --benchmark.')
+                        help='Don\'t evaluate the mask branch at all and only do object detection. This only works for --display and --benchmark.')
     parser.add_argument('--display_fps', default=False, dest='display_fps', action='store_true',
                         help='When displaying / saving video, draw the FPS on the frame')
     parser.add_argument('--emulate_playback', default=False, dest='emulate_playback', action='store_true',

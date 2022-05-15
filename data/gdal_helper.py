@@ -65,7 +65,7 @@ def __checkPassed(a,b,c,verbose):                                               
     return True
 
     
-def __convert_dims(cells=None,arrdims=None,lnglat_deltas=None,verbose=False):               #Used in geojson_to_gtif 
+def __convert_dims(cells=None,arrdims=None,lnglat_deltas=None,verbose=False):               #Used in geojson_to_geotiff 
     """ 
     Notes:
         used to find raster-array dimensions (remember rasters are a grid)  from cell sizes, or vice versa
@@ -98,7 +98,7 @@ def __convert_dims(cells=None,arrdims=None,lnglat_deltas=None,verbose=False):   
         
     return ydim,xdim
 
-def __time_this(start=None,crash:bool=False,verbose:bool=False):                #Used within geojson_to_gtif since it is resource/time intensive
+def __time_this(start=None,crash:bool=False,verbose:bool=False):                #Used within geojson_to_geotiff since it is resource/time intensive
     
     if start is None:
         start = time.perf_counter()
@@ -118,7 +118,7 @@ def __time_this(start=None,crash:bool=False,verbose:bool=False):                
         
 
 
-def __crashreport(start,res,file):                                                  #used for geojson_to_gtif function 
+def __crashreport(start,res,file):                                                  #used for geojson_to_geotiff function 
         print('error occured')
         name = file.rsplit('.',1)[0]
         size = '{0:6.2f}'.format(os.path.getsize(file)/10**6)                       #find current file size of geotif @ time of crash
@@ -141,7 +141,7 @@ def __get_output_filename(input_file,output_folder,output_file,frmt):           
 #---------------------------------------Functions:
 
 
-def geojson_to_gtif(geojson_file: str, destination_folder:str, raster_file: str = None, verbose:bool=False) -> None: 
+def geojson_to_geotiff(geojson_file: str, destination_folder:str, raster_file: str = None, verbose:bool=False) -> None: 
     
     """
     Notes:
@@ -206,7 +206,7 @@ def geojson_to_gtif(geojson_file: str, destination_folder:str, raster_file: str 
     raster_file = __get_output_filename(input_file = geojson_file,
                                        output_folder=destination_folder,
                                        output_file=raster_file,
-                                       frmt = 'GTiff')
+                                       frmt = 'tiff')
     
     if verbose:
         print(f'extents: {extents}') 
@@ -234,7 +234,7 @@ def geojson_to_gtif(geojson_file: str, destination_folder:str, raster_file: str 
     try:
         gdal.RasterizeLayer(target_ds, [1], source_layer,burn_values=[255],options=['ALL_TOUCHED=TRUE','BIGTIFF=YES','COMPRESS=LZW'])
         if verbose:
-            print('--- geojson_to_gtif completed ---')
+            print('--- geojson_to_geotiff completed ---')
     except:
         start,res = __time_this(start)
         __crashreport(start,res,raster_file)    

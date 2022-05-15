@@ -8,7 +8,7 @@ dependencies:
   - proj
   - unzip
   - pip:
-    - opencv-python 
+    - opencv-python==4.1.2.30
     - pillow <7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
     - pycocotools 
     - PyQt5 # needed on KDE/Qt envs for matplotlib
@@ -24,7 +24,7 @@ dependencies:
     - urllib3 
     - hub # https://docs.activeloop.ai/en/latest/installing.html
     - sagemaker[local]
-    - boto3==1.17.59
+    - boto3[crt] #When the AWS CRT is included, Boto3 uses it to incorporate features not otherwise available in the AWS SDK for Python. #==1.17.59
     - PyYAML
     - ipykernel
     - jupyterlab
@@ -40,3 +40,5 @@ dependencies:
     - pylint
     - webdataset
     - fiftyone
+    - minio
+    - wandb

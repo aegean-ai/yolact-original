@@ -29,7 +29,7 @@ import geopandas as gpd
 def convert_raster2vector(raster_file_name:str,vector_file_name:str,verbose=False)->None:
     """
     Warning!:
-        This function currently can only be used to convert tiles/patche-images. 
+        This function currently can only be used to convert tiles/chipe-images. 
         It needs to be updated to handle world-images
         
     Inputs: 

@@ -1,9 +1,9 @@
 """
 Definitions:
     * Region-File/Region-Image: This is any input image of arbitrary size that is broken down into tiles.
-    * Tile-Image: Tiles are what a regional image is divided to.  The default tile size is 5000x5000.
-    * Patch(s)/ Image-Patch: This is the smallest subdivision of a World-Image. This is hardcoded 256x256
-    * The patch size is set according to the input tensor size for the Yolact Model
+    * Tile Image: Tiles are what a regional image is divided to.  The default tile size is 5000x5000.
+    * Patch(es)/ Image Patch: This is the smallest subdivision of a World Image. This is hardcoded 256x256
+    * The chip size is set according to the input tensor size for the Yolact Model
     
     * Dataset
       * Each project can be considered one dataset. 
@@ -49,7 +49,7 @@ Working logic of the Pipeline:
 The complete Pipeline:
     Data Pipeline
     * loadTiles #TODO
-    * genImgPatches
+    * genImgChips
     * genAnnotations
     MEVP Pipeline
     * genInferenceJSON
@@ -67,26 +67,14 @@ The complete Pipeline:
 #------------------------ Imports/Setup -------------------------#
 #----------------------------------------------------------------#
 
-import os
+
 import traceback
 import sys
-import json
-from s3_helper import load_s3_to_local,load_local_to_s3
+
+from s3_helper import s3_to_local, local_to_s3
 from pipeline_helper import *
-from split_merge_raster import Open_Raster,Split_Raster,Save_Tile,Save_Patches            #These are all called w/in genImgPatches
-import time                                                                               #used in decorator __time_this()
-from pycocotools import mask
-import numpy as np
-import cv2
-from raster2coco import Raster2Coco
-import pyproj
-# The default configs, may be overridden
-import wget                                                                     #called within download_labels
-from zipfile import ZipFile                                                     #called within download_labels
 
-
-
-# main
+#called within download_labels
 
 if __name__ == '__main__':
     """
@@ -102,7 +90,7 @@ if __name__ == '__main__':
         -<PipelineStep>     -> [Function Name] name of the function to call in the pipeline step. Multiple can be passed to create the pipeline.
 
     LoadTiles Arguments:
-        --s3td              -> [s3 URL] The s3 URI of the input image tiles. Ex: s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/
+        --s3td              -> [s3 URL] The s3 URI of the input image tiles. Ex: s3://njtpa.auraison.aegean.ai/DOM2015/Selected_500/pipelineTest
 
     genAnnotations Arguments:
         --tvRatio           -> The train/validation split ratio. For ex: 0.8 means out of 100 images, 80 will be train and 20 will be validation. 
@@ -125,10 +113,10 @@ if __name__ == '__main__':
 
     Examples:
         Training Pipeline
-        * python dataPipeline.py --ds=ds1 --ts=train -loadTiles --s3td=test -genImgPatches -genLabelPatches -genAnnotations
+        * python dataPipeline.py --ds=ds1 --ts=train -loadTiles --s3td=test -genImgChips -genLabelChips -genAnnotations
 
         MEVP Pipeline
-        * python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgPatches -genAnnotations
+        * python dataPipeline.py --ds=ds1 --ts=inf1 -loadTiles --s3td=test -genImgChips -genAnnotations
         * python -genInferenceJSON --trained_model=weights/DVRPCResNet50_8_88179_interrupt.pth --config=dvrpc_config --score_threshold=0.0
         * python dataPipeline.py --ds=ds1 --ts=inf1 -genInferenceData --annJSON=DVRPC_test.json --infJSON=DVRPCResNet50.json
     """

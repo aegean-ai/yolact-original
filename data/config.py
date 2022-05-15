@@ -129,28 +129,14 @@ dataset_base = Config({
 })
 
 # -------- DVRPC Dataset ---------- *
-# dvrpc_dataset = dataset_base.copy({
-#     'name': 'DPRVC Dataset',
-
-#     # "/data/images" refers to the directory inside the docker container
-#     'train_images': './data/dvrpc/images',
-#     'train_info':   './data/dvrpc/annotations/DVRPC_train.json',
-
-#     'valid_images': './data/dvrpc/images',
-#     'valid_info':   './data/dvrpc/annotations/DVRPC_test.json',
-
-#     'has_gt': True,
-#     'class_names': ('sidewalk')
-# })
-
 dvrpc_dataset = dataset_base.copy({
-    'name': 'DPRVC Pedestrian Network PA Only 2020 Dataset',
+    'name': 'DPRVC Pedestrian Network PA - Dataset 2020',
 
-    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/Train',
-    'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/DVRPC_train.json',
+    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/Train',
+    'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/DVRPC_train.json',
 
-    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/Test',
-    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa-only-2020/DVRPC_test.json',
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/Test',
+    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/DVRPC_test.json',
 
     'has_gt': True,
     'class_names': ('sidewalk')
@@ -159,29 +145,33 @@ dvrpc_dataset = dataset_base.copy({
 coco2014_dataset = dataset_base.copy({
     'name': 'COCO 2014',
     
-    'train_info': './data/coco/annotations/instances_train2014.json',
-    'valid_info': './data/coco/annotations/instances_val2014.json',
+    'train_images': '/workspaces/data/coco/train2014',
+    'valid_images': '/workspaces/data/coco/val2014',
+    'train_info': '/workspaces/data/coco/annotations/instances_train2014.json',
+    'valid_info': '/workspaces/data/coco/annotations/instances_val2014.json',
 
     'label_map': COCO_LABEL_MAP
 })
 
 coco2017_dataset = dataset_base.copy({
     'name': 'COCO 2017',
-    
-    'train_info': './data/coco/annotations/instances_train2017.json',
-    'valid_info': './data/coco/annotations/instances_val2017.json',
+    'train_images': '/workspaces/data/coco/train2017',
+    'valid_images': '/workspaces/data/coco/val2017',
+    'train_info': '/workspaces/data/coco/annotations/instances_train2017.json',
+    'valid_info': '/workspaces/data/coco/annotations/instances_val2017.json',
 
     'label_map': COCO_LABEL_MAP
 })
 
 coco2017_testdev_dataset = dataset_base.copy({
     'name': 'COCO 2017 Test-Dev',
-
-    'valid_info': './data/coco/annotations/image_info_test-dev2017.json',
+    'valid_images': '/workspaces/data/coco/test2017',
+    'valid_info': '/workspaces/data/coco/annotations/image_info_test-dev2017.json',
     'has_gt': False,
 
     'label_map': COCO_LABEL_MAP
 })
+
 
 PASCAL_CLASSES = ("aeroplane", "bicycle", "bird", "boat", "bottle",
                   "bus", "car", "cat", "chair", "cow", "diningtable",
@@ -405,10 +395,6 @@ activation_func = Config({
     'relu':    lambda x: torch.nn.functional.relu(x, inplace=True),
     'none':    lambda x: x,
 })
-
-
-
-
 
 # ----------------------- FPN DEFAULTS ----------------------- #
 
@@ -676,9 +662,6 @@ coco_base_config = Config({
 })
 
 
-
-
-
 # ----------------------- YOLACT v1.0 CONFIGS ----------------------- #
 
 yolact_base_config = coco_base_config.copy({
@@ -840,7 +823,7 @@ dvrpc_config = yolact_plus_resnet50_config.copy({
     
     # Dataset stuff
     'dataset': dvrpc_dataset,  # references the above dataset via its variable name
-    'num_classes': 2,  # labels + 1 for background
+    'num_classes': 2,  # sidewalk + background
 
     'max_iter': 120000,
     'lr_steps': (60000, 100000),
@@ -852,7 +835,7 @@ dvrpc101_config = yolact_plus_base_config.copy({
     
     # Dataset stuff
     'dataset': dvrpc_dataset,  # references the above dataset via its variable name
-    'num_classes': 2,  # labels + 1 for background
+    'num_classes': 2,  # sidewalk + background
 
     'max_iter': 120000,
     'lr_steps': (60000, 100000),
