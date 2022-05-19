@@ -1,49 +1,49 @@
 """
 windowed reading: https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
 
-#Note: in laymens terms the intent of split_merge_raster when splitting is to reshape an array
-        such that it results in equally sized chips of size (chipX,chipY).
-        
-        Each chip is stored in an array indexed with a key representing its (chipkXpos,chipYpos) position.
-        such that the final array will have a shape (chipXpos,chipYpos,chipXdim,chipYdim)
-        
-        Number of Padding cells (paddingSize) will satisfy (0 <= xPad <= chipXdim-1), yPad = (0 <= yPad <= chipYdim-1). 
-        
-        Padded cells will have a constant value of p = 0 representing that they do not belong to original image.
-        the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
-        
-        If the % of original cells in a padded chip is < minScrapPercent then chips along that edge will be discarded (ie 'scrapped')
-        **There is no compensation for chips at position NM and may result in minScrapPercent < % of original cells** 
-        
-                  <chipXdim>
-      |  x0  | ... |  xN  |
-    _  ______ _____ ______
-      |      |     |     p|^
-    y0|  b00 | b10 | b0N p|chipYdim
-    __|______|_____|_____p|v
-     .|                  .|
-     .|  original image  .|
-     .|                  .|
-    __|______|_____|_____.| 
-      |      |     |     p|
-    yM| b0M  | ... | bNM p|
-      |pppppp|ppppp|pppppp|
-    ---------------------- 
+# Note: in laymens terms the intent of split_merge_raster when splitting is to reshape an array
+    such that it results in equally sized chips of size (chipXdim,chipYdim).
+    
+    Each chip is stored in an array indexed with a key representing its (chipkXpos,chipYpos) position.
+    such that the final array will have a shape (chipXpos,chipYpos,chipXdim,chipYdim)
+    
+    Number of Padding cells (paddingSize) will satisfy (0 <= xPad <= chipXdim-1), yPad = (0 <= yPad <= chipYdim-1). 
+    
+    Padded cells will have a constant value of p = 0 representing that they do not belong to original image.
+    the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
+    
+    If the % of original cells in a padded chip is < minScrapPercent then chips along that edge will be discarded (ie 'scrapped')
+    **There is no compensation for chips at position NM and may result in minScrapPercent < % of original cells** 
+    
+                <chipXdim>
+    |  x0  | ... |  xN  |
+_  ______ _____ ______
+    |      |     |     p|^
+y0|  b00 | b10 | b0N p|chipYdim
+__|______|_____|_____p|v
+    .|                  .|
+    .|  original image  .|
+    .|                  .|
+__|______|_____|_____.| 
+    |      |     |     p|
+yM| b0M  | ... | bNM p|
+    |pppppp|ppppp|pppppp|
+---------------------- 
 
 #Flow:
     inputArray > padd > cut > outPut array
 
 private functions:
     __PaddTiff()
-            calls: None
+        calls: None
         called in: SplitTiff
         Output flows to: __Cutter
        
 public function:
     SplitTiff()
-            calls: __PaddTiff,__Cutter
+        calls: __PaddTiff,__Cutter
         Called in: Unknown
-         Output flows to: unKnown
+        Output flows to: unKnown
 
 """
 
@@ -51,8 +51,8 @@ import numpy as np
 import sys
 import rasterio as rio
 from rasterio import coords
-import rasterio.plot                            #---NOTE! For some reason rasterio does not automatically have all submodules available 
-import rasterio.mask                            #         They must be imported specificaly
+import rasterio.plot                           
+import rasterio.mask                   
 
 
 
@@ -61,6 +61,7 @@ def __init__():
 
 def __get_size(obj, seen=None):
     #Source: https://goshippo.com/blog/measure-real-size-any-python-object/
+    
     """Recursively finds size of objects"""
     
     size = sys.getsizeof(obj)
@@ -81,7 +82,7 @@ def __get_size(obj, seen=None):
         size += sum([__get_size(i, seen) for i in obj])
     return size
     
-#-------------------Working with Raster Files:
+# Working with Raster Files:
 """
 raster.open()
 https://rasterio.readthedocs.io/en/latest/api/rasterio.html?highlight=raster.open#rasterio.open
@@ -97,12 +98,11 @@ def __enumerate_tiles(width,height,maxWidth,maxHeight):
             
             yield row, row+maxHeight, col, col+maxWidth
             
-            
-            
+                        
 def __newTransform(oldtransform,xy,verbose=False):                              #Not Currently need: See Jira UPA-47: Retaining geoLocation Information 
     """
     Notes:
-        This function exists right now in the event tiles/chips need to be exported to Arcgis Pro.  
+        This function exists in case tiles/chips need to be exported to Arcgis Pro.  
         It ensures that the tiles/chips will end up in the correct location on the map.
         
     https://rasterio.readthedocs.io/en/latest/api/rasterio.transform.html   
@@ -114,12 +114,20 @@ def __newTransform(oldtransform,xy,verbose=False):                              
     """
 
     
-    left,top = rio.transform.xy(oldtransform, rows=xy['rows'], cols=xy['cols'])
+    left,top = rio.transform.xy(
+        oldtransform, 
+        rows=xy['rows'], 
+        cols=xy['cols']
+    )
+
     xpixel,ypixel = -1*float(oldtransform.e),float(oldtransform.a)
-    newtransform = rio.transform.from_origin(west=left, 
-                                             north=top, 
-                                             xsize=xpixel,
-                                             ysize=ypixel)
+    
+    newtransform = rio.transform.from_origin(
+        west=left, 
+        north=top, 
+        xsize=xpixel,
+        ysize=ypixel
+    )
                                              
     if verbose:
         print(f'xy: {xy}')
@@ -134,7 +142,7 @@ def __newTransform(oldtransform,xy,verbose=False):                              
 def open_raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
         """
             Note: convert / read the data into a numpy array,
-                    return summary of information if needed
+                return summary of information if needed
                     
                   ***   src.read() will read all bands  
                         currently all functions do accomodate multiband arrays
@@ -150,7 +158,7 @@ def open_raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbos
                 verbose (boolean): Used to print summary if needed
             
             outputs:
-                tile_array (np.arrary): returned array 
+                tile_array (np.array): returned array 
                 
 
         """
@@ -192,7 +200,9 @@ def open_raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbos
                                                         xy={'cols':left_col,'rows':top_row},
                                                         verbose=True)
                 
-                tile_name = fr'{region_name}_tile_{left_col}_{top_row}'          #note that the xy order is different from window read
+
+                # tile_name = fr'{region_name}_tile_{left_col}_{top_row}'          #note that the xy order is different from window read
+                tile_name = fr'{region_name}'          #note that the xy order is different from window read
                 
                 if verbose:                                                     #Print a summary of stats about Image
                     print(fr'{tile_name}: {type(tile_array)} | tile array shape: {tile_array.shape} | tile array memory size: {__get_size(tile_array)}')
@@ -300,7 +310,6 @@ def split_raster(image:np.array,chipX:int,chipY:int,minScrapPercent:float,verbos
                              final shape: (bands,xchipPosition,xchipSize,ychipPosition,ychipSize)       
     """
     
-    
     paddedImg = __pad_raster(image,chipX,chipY,minScrapPercent,verbose)        #get padded image
     
     bands, xDim,yDim = paddedImg.shape                                          #padded image dimensions
@@ -311,7 +320,6 @@ def split_raster(image:np.array,chipX:int,chipY:int,minScrapPercent:float,verbos
     
     chips = np.reshape(paddedImg,newShape)                                    #reshape into blocks
 
-    
     
     if verbose:                                                                 #print summary
         print(f"{'-'*5} Summary of Splitting {'-'*5}")
@@ -326,12 +334,6 @@ def split_raster(image:np.array,chipX:int,chipY:int,minScrapPercent:float,verbos
         print('memory %change: {0:+8.4f}%\n\n'.format((chips.nbytes/image.nbytes - 1)*100))
     return chips
     
-
-
-
-
-    
-
 def __enumerate_chips(array):
     #<Image Index (Integer)>_<row number>_<col number>
     #shp = (bands,xBlockPosition,xBlockSize,yBlockPosition,yBlockSize) 
@@ -352,7 +354,7 @@ def __make_worldfile(affine,file_path:str,verbose:bool):
         if other filetypes that use header files are found, please add them to the exclusion list. 
     
     Inputs:
-                 affine: affine transform object
+        affine: affine transform object
         file_path (str): file path of parent image (must include extension)
     
     Outputs:
@@ -386,8 +388,8 @@ def __make_worldfile(affine,file_path:str,verbose:bool):
     if fmt.lower() in ('tif',):                                               #Check exclusion list (files that use header to store world data) 
         print('No world file generated: file type is in exclusion list') if verbose else None
         return None        
-    elif len(fmt) >= 3:                                                         #Uses 1st & 3rd letters of extension 
-        f1,f2 = fmt[0],fmt[2]
+    elif len(fmt) >= 3:                                                         #Uses 0th & 3rd letters of extension (JPEG -> JGw)
+        f1,f2 = fmt[0],fmt[3]
         fmt = f'{f1}{f2}w'
         file_path = f'{filename}.{fmt}'
     elif len(fmt) == 0:                                                         #if image has no extension, w is appended to file name (per guidelines)
@@ -400,7 +402,9 @@ def __make_worldfile(affine,file_path:str,verbose:bool):
     data = f'{affine.a}\n{affine.d}\n{affine.b}\n{affine.e}\n{affine.c}\n{affine.f}'  
     
     with open(file_path,'w') as worldfile:                                      #Create world file
-        worldfile.write(data)        
+        worldfile.write(data) 
+    worldfile.close()       
+    
     print(f'world file create: {file_path}') if verbose else None
     
     
@@ -439,8 +443,8 @@ def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_na
         profile['driver'] = 'GTiff'
     
     profile['count'] = array.shape[0]                                               #band count
-    profile['width'] = array.shape[2]                                               #xPatchSize
-    profile['height'] = array.shape[4]                                              #yPatchSize
+    profile['width'] = array.shape[2]                                               #xSize
+    profile['height'] = array.shape[4]                                              #ySize
     profile['photometric'] = 'RGB'
     
     print(f'updated raster meta data:\n{profile}') if verbose else None
@@ -457,8 +461,9 @@ def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_na
         
         with rio.open(chip_path,'w',**profile) as dst:                             #create file
             left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out chip
-            dst.write(array[:,row_num,:,col_num,:])                                 #array[bands,xPatchPosition,xPatchSize,yPatchPosition,yPatchSize] 
+            dst.write(array[:,row_num,:,col_num,:])                                 #array[bands,xPosition,xSize,yPosition,ySize] 
             __make_worldfile(profile['transform'], chip_path,verbose)              #method for creating a world file. (a document that contains key affine info)
+            
         
     print(f'Save Completed to {path_to_save}\n') if verbose else None
     

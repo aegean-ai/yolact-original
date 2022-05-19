@@ -64,6 +64,7 @@ The complete Pipeline:
 #----------------------------------------------------------------#
 
 import os
+from os.path import exists
 import traceback
 import sys
 import json
@@ -265,6 +266,10 @@ def loadFiles():
             fs (str): local fileset folder (sub folder)
             s3td (str): bucket path to files
             file_extensions (str): list of file formats to search for in s3Dir, gets converted to list. Ex: "jpg, png" -> ['jpg','png'], "all" -> ["all"] (all returns all files)
+    
+    Example: 
+    
+    python3 pipeline_e2e.py --project_root=project_root_10 --fs=inputs --file_extensions=all --s3d=s3://bucket-name  -loadFiles
     """
     ##----------------------------Configuration/Setup---------------------------##
     project_root = config['project_root']                                                           #dataset string. root folder of files
@@ -291,22 +296,9 @@ def loadFiles():
         verbose=config['verbose']
     )
     
-    
     vbPrint('Loading Region File(s) Completed')
-    
-    """
-    #Examples:
-    python3 pipeline_e2e.py --project_root=dataset7 --fs=inputs --file_extensions=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/DOM2015/Selected_500/pipelineTest/ -loadFiles
-    
-    python3 pipeline_e2e.py --project_root=dataset7 --fs=labels --file_extensions=all --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/ -loadFiles
-    
-    python3 pipeline_e2e.py --project_root=dataset7 --fs=vectors --file_extensions=geojson --s3d=s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/vector_files/ -loadFiles 
-    """
 
 
-    
-        
-    
 @__time_this  
 def genImgChips():
     """
@@ -324,6 +316,10 @@ def genImgChips():
     
     outputs:
         folder containing chip image-files and any support files. 
+
+    Example:
+        python3 pipeline_e2e.py --project_root=project_root --fs=labels --file_extensions=tif --chip_file_format=png --mWH=5000,5000 -genImgChips
+    
     """
 
     ##----------------------------Configuration/Setup---------------------------##
@@ -411,16 +407,6 @@ def genImgChips():
                            
     vbPrint(f"Number of files created in {chipsDir}: {len(chipFiles)}\n{'-'*4}Image Chips made successfully{'-'*4}")
     
-    """
-    Example:
-        * python3 pipeline_e2e.py --project_root=dataset5 --fs=labels --file_extensions=tif --chip_file_format=png --mWH=5000,5000 -genImgChips
-        * python3 pipeline_e2e.py --project_root=dataset5 --fs=inputs --file_extensions=jpg --chip_file_format=png --mWH=5000,5000 -genImgChips
-        * python3 pipeline_e2e.py --project_root=dataset7 --fs=labels --ts=labels --file_extensions=tif --chip_file_format=tif --mWH=5000,5000 -genImgChips
-        * python3 pipeline_e2e.py --project_root=dataset7 --fs=labels --ts=labels --file_extensions=tif --chip_file_format=tiff --mWH=5000,5000 -genImgChips
-        * python3 pipeline_e2e.py --project_root=dataset8 --fs=labels --ts=labels --file_extensions=tif --chip_file_format=tif --mWH=5000,5000 -genImgChips
-        * python3 pipeline_e2e.py --project_root=dataset9 --fs=labels --ts=labels9 --file_extensions=tif --chip_file_format=tif --mWH=5000,5000 -genImgChips
-    """
-
 def genAnnotations():
     """
     Generates the train and test annotations files using the image and label chips
@@ -439,10 +425,8 @@ def genAnnotations():
     ts = config['ts']
     tvRatio = config['tvRatio']
 
-    trainAnnFilename = 'annotations_train.json'
-    testAnnFilename = 'annotations_test.json'
-
-    labelChipsDir = '%s/labelChips_%s'%(project_root,ts)
+    ts = config['ts']
+    labelChipsDir = config['labelChipsDir']
     annDir = '%s/annotations_%s'%(project_root,ts)
 
     ## Making the dirs
@@ -553,17 +537,17 @@ def genInferenceData():
                   with a black background very clearly.
             * Essentially: For each 'image_id' (i.e. for each chip), we now have a rasterized inference.
             * For each tile:
-                * We now go through the all of chips, pull their rasters from the HashMap.
+                * We  go through  all of chips, pull their rasters from the HashMap.
                 * Since the chip information includes the co-ordinates of a chip in a tile, we know the indexes of the 256x256 block in the 5120x5120 tile.
-                * Using this info, we generate a single 5120x5120 raster for each tile. This is then cropped to 5000x500px similar to year-1.
+                * Using this info, we generate a single 5120x5120 raster for each tile. This is then cropped to 5000x500px.
                 * Generation of the GeoJSON:
                     * Since we know the tile i.e. the path and name of the tile image, we can infer the path and name of the respective world file
-                    * The Raster can be converted into polygon vectors
-                    * For each detected polygon of >3 points, it is added into the geoJSON.
+                    * The raster is then converted into a number of polygon vectors
+                    * Each detected polygon of >3 points, it is appended to the geoJSON file.
         * Once all the tiles are processed, the appropriate line endings are appended to the geoJSON.
 
     GenInferenceData Notes:
-        * The saving images can be skipped the argument '--genImgs=0'
+        * The saving images can be skipped using the argument '--genImgs=0'
         * The generation of geoJSON can be skipped with the argument '--genGeoJSON=0'
         * If both arguments are provided, nothing is saved. (Possible use-case is for debugging)
     """
@@ -589,8 +573,6 @@ def genInferenceData():
         vbPrint('Making dir: %s'%(inferenceGeoJSONDir))
         os.mkdir(inferenceGeoJSONDir)
 
-    #detFilePath = '%s/inferencesJSON_%s/%s'%(project_root,ts,config['infJSON'])
-    #annFilePath = '%s/annotations_%s/%s'%(project_root,ts,config['annJSON'])
     detFilePath = '%s'%(config['infJSON'])
     annFilePath = '%s'%(config['annJSON'])
 
@@ -627,7 +609,7 @@ def genInferenceData():
     vbPrint('Expected Chip dimensions: %ix%i'%(chipShape[0],chipShape[1]))
     vbPrint('Expected Tiles dimensions: %ix%i'%(infTileShape[0],infTileShape[1]))
 
-    # Creating a hashmap for the image dets with the image iproject_root as keys
+    # Creating a hashmap for the image dets with the image IDs as keys
     # Each prediction is a merged image of many detections
     # Only detections above the threshold are selected to be merged
     vbPrint('Generating det masks with a threshold of %0.2f'%(config['det_score_threshold']))
@@ -664,12 +646,9 @@ def genInferenceData():
     num_chips_per_tile_cols = config['colsSplitPerTile']
     expectedChips = num_chips_per_tile_rows*num_chips_per_tile_cols
 
-    #### epsg: 3702 is close but thats Wyoming east
-    #  
-    # Initialize transformer
-    #   From:     epsg projection 32111 - nad83 / new jersey
-    #   To:       lat longs
+    
     projectionTransformer = pyproj.Transformer.from_crs("epsg:32111","epsg:4326",always_xy=False)
+    #projectionTransformer = pyproj.Transformer.from_crs("epsg:4326", "epsg:6565", always_xy=False)
 
     i = 0
     sidewalkCount = 0
@@ -687,6 +666,7 @@ def genInferenceData():
         else:
             # The inference tile. Initialized with 0. Masks are overlayed at their respective locations.
             infTile = np.zeros((num_chips_per_tile_rows*chipShape[0],num_chips_per_tile_cols*chipShape[1]),dtype=np.uint8)
+            
             for chipID,row,col in tileMap[tile]:
                 # Overlays the chip mask at the correct location in infTile
                 # Skip any chips with no inference. It is assumed that no inference data is generated for chips with 0 detections.
@@ -705,66 +685,87 @@ def genInferenceData():
             # Cropping image into the final tile dimension
             infTile = infTile[:config['tileDimX'],:config['tileDimY']]
 
-            if(genGeoJSON):
+            # Getting affine transform parameters from the world file
+            tile_exists = exists(os.path.join(tilesDir,tile+'.JPEG'))
+            tile_world_file_exists = exists(os.path.join(tilesDir,tile+'.JGw'))
+            
+            if tile_exists and tile_world_file_exists:
                 # Getting affine transform parameters from the world file
                 with open('%s/%s.JGw'%(tilesDir,tile)) as worldFile:
                     world_file_rows = worldFile.read().split('\n')
+            
+            worldFile.close()
 
-                A = float(world_file_rows[0])
-                D = float(world_file_rows[1])
-                B = float(world_file_rows[2])
-                E = float(world_file_rows[3])
-                C = float(world_file_rows[4])
-                F = float(world_file_rows[5])
-
-                converter = Raster2Coco(None,None)
-                binMask = np.zeros_like(infTile)
-                binMask[infTile==255]=1
-                vectors = converter.binaryMask2Polygon(binMask)
-                JSONRows = ''
-                for sidewalk in vectors:
-                    # Skipping any triangles
-                    if(len(sidewalk) >= 4):
-                        sidewalkCount += 1
-                        # Applying affine transform
-                        '''
-                        print(('-'*10)+'\nSidewalk pixels vector')
-                        print(sidewalk)
-                        
-                        print(('-'*10)+'\nUTM Vector')
-                        print(['[%f,%f]'%(
-                                ((A*x) + (B*y) + C,
-                                (D*x) + (E*y) + F)
-                        ) for y,x in sidewalk])
-                        '''
-                        vecLi = ['[%f,%f]'%(
-                            projectionTransformer.transform(
-                                ((A*x) + (B*y) + C),
-                                ((D*x) + (E*y) + F)
-                            )[::-1]
-                        ) for x,y in sidewalk]
-                        #print(('-'*10)+'\nlat long vector')
-                        #print(vecLi)
-
-                        vecStr = '[[%s]]'%(','.join(vecLi))
-                        #print(('-'*10)+'\nFinal vector string for ')
-                        #print('%s'%(vecStr))
-                        rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
-                        
-                        # Skip comma for first sidewalk
-                        if(sidewalkCount == 1):
-                            rowStr = rowStr[1:]
-
-                        JSONRows += '%s'%(rowStr)
-                    
-                if(JSONRows != ''):
-                    with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
-                        geoJSONf.write(JSONRows)
+            A = float(world_file_rows[0])
+            D = float(world_file_rows[1])
+            B = float(world_file_rows[2])
+            E = float(world_file_rows[3])
+            C = float(world_file_rows[4])
+            F = float(world_file_rows[5])
 
             if(genImgs):
-                # Writing the image tile
+                # Writing the inference image and the world tile
                 # File format kept as png because it has lossless compression and to work well with rasterio if needed.
                 cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
+                # write the pgw world file for the png inference images
+                with open('%s/%s.pgw'%(inferenceTilesDir,tile), 'w') as pgwFile:
+                    for i in range(len(world_file_rows)):
+                        pgwFile.writelines(world_file_rows[i]+'\n')
+                pgwFile.close()
+
+            if(genGeoJSON):
+                vbPrint('Generating GeoJSON for tile %s'%tile)
+                with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+
+                    converter = Raster2Coco(None,None)
+                    binMask = np.zeros_like(infTile)
+                    binMask[infTile==255]=1
+                    vectors = converter.binaryMask2Polygon(binMask)
+                    JSONRows = ""
+                    
+                    for sidewalk in vectors:
+                        # Skipping any triangles
+                        if(len(sidewalk) >= 4):
+                            sidewalkCount += 1
+                            # Applying affine transform
+                            
+                            # print(('-'*10)+'\nSidewalk pixels vector')
+                            # print(sidewalk)
+                            
+                            # print(('-'*10)+'\nUTM Vector')
+                            # print(['[%f,%f]'%(
+                            #         ((A*x) + (B*y) + C,
+                            #         (D*x) + (E*y) + F)
+                            # ) for y,x in sidewalk])
+                        
+                            vecLi = ['[%f,%f]'%(
+                                    ((A*x) + (B*y) + C,
+                                    (D*x) + (E*y) + F)
+                            ) for x,y in sidewalk]
+
+                            # vecLi = ['[%f,%f]'%(
+                            #     projectionTransformer.transform(
+                            #         ((A*x) + (B*y) + C),
+                            #         ((D*x) + (E*y) + F)
+                            #     )[::-1]
+                            # ) for x,y in sidewalk]
+                            #print(('-'*10)+'\nlat long vector')
+                            #print(vecLi)
+
+                            vecStr = '[[%s]]'%(','.join(vecLi))
+                            #print(('-'*10)+'\nFinal vector string for ')
+                            #print('%s'%(vecStr))
+                            rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
+                            
+                            # Skip comma for first sidewalk
+                            if(sidewalkCount == 1):
+                                rowStr = rowStr[1:]
+
+                            JSONRows += '%s'%(rowStr)
+                        
+                    if(JSONRows != ""):
+                        geoJSONf.write(JSONRows)
+                    geoJSONf.close()
 
             # Prints progress at every 'pef' factor of completion
             # PEF stands for 'Print-Every factor'
@@ -773,10 +774,11 @@ def genInferenceData():
                 vbPrint('Generating inferences tile: %i/%i\t%0.2f %%'%(i+1,n,100*facComp))
                 peFactor += config['pef']
 
-    if(genGeoJSON):
-        #print('TILE: ',tile)
-        with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
-            geoJSONf.write('\n]}')
+        # if(genGeoJSON):
+        #     with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+        #         geoJSONf.write('\n]}')
+            
+            geoJSONf.close()
 
     if(genGeoJSON and genImgs):
         vbPrint('Inference GeoJSON and Tiles generated Successfully')

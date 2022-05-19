@@ -132,11 +132,11 @@ dataset_base = Config({
 dvrpc_dataset = dataset_base.copy({
     'name': 'DPRVC Pedestrian Network PA - Dataset 2020',
 
-    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/Train',
-    'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/DVRPC_train.json',
+    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/Train',
+    'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/DVRPC_train.json',
 
-    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/Test',
-    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/dvrpc-pedestrian-network-pa/dataset-2020/DVRPC_test.json',
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/Test',
+    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/DVRPC_test.json',
 
     'has_gt': True,
     'class_names': ('sidewalk')
@@ -815,7 +815,6 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
         'use_square_anchors': False,
     }),
 })
-
 
 # -------- DVRPC Config Resnet50 ---------- *
 dvrpc_config = yolact_plus_resnet50_config.copy({

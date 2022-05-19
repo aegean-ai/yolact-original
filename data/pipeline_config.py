@@ -13,8 +13,8 @@ config = {
     'det_score_threshold':0.0, # During generation of inference data from already generated inferenceJSON: Minimum sidewalk detection score threshold to include detection. 
     'rowsSplitPerTile':20, # Expected rows per tile
     'colsSplitPerTile':20, # Expected columns per tile
-    'chipDimX':256, # Patch dimension X
-    'chipDimY':256, # Patch dimension Y
+    'chipDimX':256, #  Chip dimension X
+    'chipDimY':256, #  Chip dimension Y
     'tileDimX':5000, # Tile Dimension X
     'tileDimY':5000, # Tile Dimension Y
     'mWH': '5000,5000', # maximum Width/Height of tiles: used in genImageChips

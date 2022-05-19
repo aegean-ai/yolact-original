@@ -2,7 +2,7 @@
 Definitions:
     * Region-File/Region-Image: This is any input image of arbitrary size that is broken down into tiles.
     * Tile Image: Tiles are what a regional image is divided to.  The default tile size is 5000x5000.
-    * Patch(es)/ Image Patch: This is the smallest subdivision of a World Image. This is hardcoded 256x256
+    * (es)/ Image : This is the smallest subdivision of a World Image. This is hardcoded 256x256
     * The chip size is set according to the input tensor size for the Yolact Model
     
     * Dataset

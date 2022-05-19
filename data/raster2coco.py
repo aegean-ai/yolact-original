@@ -1,8 +1,6 @@
-from osgeo import gdal, gdalnumeric, ogr, gdal_array
+from osgeo import gdal, gdalnumeric
 from skimage import measure
 import numpy as np
-import json
-import os
 import datetime
 from shapely.geometry import Polygon
 
@@ -31,19 +29,25 @@ def raster2array(rasters,band_no=1):
 # This function will convert the rasterized clipper shapefile
 # to a mask for use within GDAL.
 def imageToArray(i):
+    
     """
     Converts a Python Imaging Library array to a
     gdalnumeric image.
     """
+    
     a=gdalnumeric.fromstring(i.tobytes(),'b')
+
     a.shape=i.im.size[1], i.im.size[0]
+    
     return a
 
 #
 def coord2pixelOffset(geotransform, x, y):
+    
     """
     Arguments:
-    geotransform            A gdal transform object
+    
+    geotransform  - A gdal transform object
     x               world coordinate x
     y               world coordinate y
     return  pixel position in image
@@ -113,7 +117,7 @@ INFO = {
     "url": "",
     "version": "0.1.0",
     "year": 2019,
-    "contributor": "czh_njit",
+    "contributor": "pantelis",
     "date_created": datetime.datetime.utcnow().isoformat(' ')
 }
 
@@ -134,7 +138,9 @@ CATEGORIES = [
 ]
 
 class Raster2Coco():
+    
     def __init__(self, labelFiles, labelDir):
+        
         self.labelFiles = labelFiles
         self.labelDir = labelDir
 
@@ -170,6 +176,7 @@ class Raster2Coco():
         polygons = self.binaryMask2Polygon(raster_array)
 
         for idx,polygon in enumerate(polygons):
+            # TODO: understand why the threshold of 7 is used
             if polygon.size > 7:
                 category_info = {'id':1,"is_crowd":0}
                 annotation_info = self.create_annotation_info(idx+annotation_idx,img_idx,category_info,polygon,img_size)
@@ -177,6 +184,7 @@ class Raster2Coco():
 
 
     def binaryMask2Polygon(self,binaryMask):
+
         polygons =[]
 
         padded_binary_mask = np.pad(binaryMask, pad_width=1, mode='constant', constant_values=0)
@@ -203,9 +211,13 @@ class Raster2Coco():
             polygons.append(contour)
         return polygons
 
-    def create_image_info(self,image_id, file_name, image_size,
-                          date_captured=datetime.datetime.utcnow().isoformat(' '),
-                          license_id=1, coco_url="", flickr_url=""):
+    def create_image_info(self,
+            image_id, 
+            file_name, 
+            image_size,
+            date_captured=datetime.datetime.utcnow().isoformat(' '),
+            license_id=1, coco_url="", flickr_url=""
+        ):
 
         image_info = {
             "id": image_id,
@@ -220,8 +232,15 @@ class Raster2Coco():
 
         return image_info
 
-    def create_annotation_info(self,annotation_id, image_id, category_info, segmentation,
-                               image_size=None, tolerance=2, bounding_box=None):
+    def create_annotation_info(self,
+            annotation_id, 
+            image_id, 
+            category_info, 
+            segmentation,
+            image_size=None, 
+            tolerance=2, 
+            bounding_box=None
+        ):
         try:
             polygon = Polygon(np.squeeze(segmentation))
             # print(type(polygon))

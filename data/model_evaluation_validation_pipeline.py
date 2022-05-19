@@ -145,14 +145,14 @@ def genInferenceData():
     infTileShape = (chipShape[0]*config['colsSplitPerTile'],
                     chipShape[1]*config['rowsSplitPerTile'])
 
-    vbPrint('Expected Patch dimensions: %ix%i'%(chipShape[0],chipShape[1]))
+    vbPrint('Expected  Chip dimensions: %ix%i'%(chipShape[0],chipShape[1]))
     vbPrint('Expected Tiles dimensions: %ix%i'%(infTileShape[0],infTileShape[1]))
 
     # Creating a hashmap for the image dets with the image ids as keys
     # Each prediction is a merged image of many detections
     # Only detections above the threshold are selected to be merged
     vbPrint('Generating det masks with a threshold of %0.2f'%(config['det_score_threshold']))
-    infPatchMap = dict()
+    infMap = dict()
     i=0
     n=len(infData)
     peFactor = config['pef']
@@ -165,7 +165,7 @@ def genInferenceData():
                 detMask = mask.decode(det['mask'])
                 pred[detMask==1]=255
         
-        infPatchMap[img['image_id']] = pred
+        infMap[img['image_id']] = pred
 
         # Prints progress at every 'pef' factor of completion
         # PEF stands for 'Print-Every factor'
@@ -211,7 +211,7 @@ def genInferenceData():
             for chipID,row,col in tileMap[tile]:
                 # Overlays the chip mask at the correct location in infTile
                 # Skip any chips with no inference. It is assumed that no inference data is generated for chips with 0 detections.
-                if(chipID in infPatchMap):
+                if(chipID in infMap):
                     # Cropshift is the extra pixels to the left and top in the final row and column of the image inference
                     # This is only done due to the way the year-1 project was 'padded'.
                     # This will be need to be removed when correct padding is applied.
@@ -221,7 +221,7 @@ def genInferenceData():
                         cropShiftX = 120
                     if(col==cols):
                         cropShiftY = 120
-                    infTile[(row-1)*chipShape[0]:((row)*chipShape[0])-cropShiftX, (col-1)*chipShape[1]:((col)*chipShape[1])-cropShiftY] = infPatchMap[chipID][cropShiftX:,cropShiftY:]
+                    infTile[(row-1)*chipShape[0]:((row)*chipShape[0])-cropShiftX, (col-1)*chipShape[1]:((col)*chipShape[1])-cropShiftY] = infMap[chipID][cropShiftX:,cropShiftY:]
             
             # Cropping image into the final tile dimension
             infTile = infTile[:config['tileDimX'],:config['tileDimY']]
