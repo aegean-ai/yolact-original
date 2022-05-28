@@ -69,7 +69,7 @@ import traceback
 import sys
 import json
 from s3_helper import s3_to_local
-from split_merge_raster import open_raster,split_raster,save_tile,save_chips            #These are all called w/in genImgChips
+from split_merge_raster import convert_tiles, open_raster,split_raster,save_tile,save_chips            #These are all called w/in genImgChips
 import time                                                                               #used in decorator __time_this()
 from pycocotools import mask
 import numpy as np
@@ -79,6 +79,7 @@ import pyproj
 # The default configs, may be overridden
 import wget                                                                     #called within download_labels
 from zipfile import ZipFile                                                     #called within download_labels
+from pathlib import Path
 
 # This is the default configuration of parameters for the pipeline
 config = {
@@ -97,9 +98,13 @@ config = {
     'tileDimX':5000, # Tile Dimension X
     'tileDimY':5000, # Tile Dimension Y
     'mWH': '5000,5000', # maximum Width/Height of tiles: used in genImageChips
-    'file_extensions':'jpg,png,tiff, tif', # image formats to consider when reading files
-    'chip_file_format': 'jpg', #'tif', ## Save format for generated chips in genImageChips
-    'tvRatio':0.8, # The train-validation ratio used for generating training annotations
+    'file_extensions':'jpeg, jpg, jgw, png, pgw, tiff, tif, tfw', # image formats to consider when reading files
+    'region_file_format': 'tif',
+    'region_image_near_infrared':True,
+    'source_tile_file_format': 'jpeg',
+    'target_tile_file_format': 'jpeg',
+    'chip_file_format': 'jpeg', #'tif', ## Save format for generated chips in genImageChips
+    'tvRatio':0.8, # The default train-validation ratio used for generating training annotations
     'genImgs':True, # in genInferenceData Setting this to 0 skips saving images 
     'genGeoJSON':True, # in genInferenceData Setting this to 0 skips generation of geoJSON
     'aws_sso_flag':False
@@ -330,72 +335,90 @@ def genImgChips():
     window = __getWindow(window_config=config['mWH'])                           #dictonary w/ max window dimensions (default: width:5000,height:5000) 
     
     file_formats = config['file_extensions'].replace(' ','').split(',')                    #convert string of file formats to list of formats
+    source_tile_file_format = config['source_tile_file_format']                                                   #file format for tiles
+    target_tile_file_format = config['target_tile_file_format']                                                   #file format for tiles
     chip_file_format = config['chip_file_format']                                                   #file format for chips when they are saved. (png,jpeg,tif) https://gdal.org/drivers/raster/index.html
 
-    worldDir = '%s/region_%s'%(project_root,fs)                                           #directory with files to convert to chips 
-    worldFiles = __listdir(directory=worldDir, extensions=file_formats)                             #list of files to convert to chips
+    regionDir = '%s/region_%s'%(project_root,fs)                                           #directory with files to convert to chips 
+    regionFiles = __listdir(directory=regionDir, extensions=file_formats)                             #list of files to convert to chips
     
-    if ts is not None:                                                          #subfolder for saving tiles
-        tilesDir = '%s/imageTiles_%s'%(project_root,ts)
-        __make_folders(rootfolder=project_root,
-                       subfolder=tilesDir)    
     
-                           
-    chipsDir = '%s/imageChips_%s'%(project_root,fs)                                   #subfolder for saving chips
-    vbPrint('%i Region files found in %s'%(len(worldFiles),worldDir))           #display the number of files to be processed
-    
+    tilesDir = '%s/imageTiles_%s'%(project_root,ts)
+    __make_folders(rootfolder=project_root,
+                    subfolder=tilesDir)    
+                            
+    chipsDir = '%s/imageChips_%s'%(project_root,ts)                                   #subfolder for saving chips
+    vbPrint('%i Region files found in %s'%(len(regionFiles),regionDir))           #display the number of files to be processed
     
     __make_folders(rootfolder=project_root,                                               ##Make folder to hold chips
                    subfolder=chipsDir)                                        #method for making project rootfolder/subfolders
     
     
+    # if config['region_file_format']=='tif':
+    #     source_is_tif=True
+    # else:
+    #     source_is_tif=False
+    
+    # if the tile has 4 bands with band 4 being the Near Infra Red (NIR) band the  say so
+    if config['region_image_near_infrared']:
+        region_image_near_infrared=True
 
+    # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
+    if not target_tile_file_format==source_tile_file_format:
+        convert_tiles(sourceIsNearInfrared=region_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=regionDir, targetDir=regionDir)
+
+    # list of tiles converted to JPEG that need further split into chips
+    tilesFiles = __listdir(directory=regionDir, extensions=target_tile_file_format)                             
     
-    
-    ##----------------------------Create Chips------------------------------------##
-    for count,imageName in enumerate(worldFiles):
-        image_path = fr'{worldDir}/{imageName}'                                #recreate image path 
+    # Loop over tiles
+    for count,imageName in enumerate(tilesFiles):
+        image_path = fr'{regionDir}/{imageName}'                                #recreate image path 
         vbPrint(f'Current Image Path: {image_path}')
         
-        
-        #Open world file & apply window to generate Tiles 
-        for tile_array,tile_meta,tile_name in open_raster(path_to_region = image_path,      #current world file
-                                                          maxWidth = window['width'],       #this is maxWidth/maxHeight
-                                                          maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
-                                                          verbose = config['verbose']):
+        #Open raster files & apply window to generate chips 
+        for tile_array, tile_meta, tile_name in open_raster(
+            path_to_files = image_path,      #current tile
+            maxWidth = window['width'],       #this is maxWidth/maxHeight
+            maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
+            verbose = config['verbose']):
                                                              
             if 0 in tile_array.shape:
                 vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
                 continue
             
-            
-            
             ## Creation of Image chips
-            split_array = split_raster(image=tile_array,                        #current tile to split into chips
-                                       chipX = 256,                            #chip width
-                                       chipY = 256,                            #chip height
-                                       minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
-                                       verbose = config['verbose'])
+            split_array = split_raster(
+                image_array=tile_array,                        #current tile to split into chips
+                chipX = 256,                            #chip width
+                chipY = 256,                            #chip height
+                minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
+                verbose = config['verbose']
+            )
         
+            # if we specify a tileset to save then save the tiles. 
+            # otherwise if the source tiles are Tif, the tileset would already contain the required JPEG tiles 
             if ts is not None:
-                ##Save Tiles:
-                save_tile(array=tile_array,                                     #tile array
-                          save_directory=tilesDir,                              #folder location to save tile in 
-                          tile_name=tile_name,                                  #chips will be named as: region_tile_{tileXpos}_{tileYpos}
-                          profile = tile_meta,                                  #rasterio requires a 'profile'(meta data) to create/write files
-                          save_fmt = chip_file_format,                                  #format to save tiles as (ex: png,jpeg,geoTiff) 
-                          verbose = config['verbose'])
+                save_tile(
+                    array=tile_array,              #tile array
+                    save_directory=tilesDir,        #folder location to save tile in 
+                    tile_name=tile_name,            #chips will be named as: region_tile_{tileXpos}_{tileYpos}
+                    profile = tile_meta,                 #rasterio requires a 'profile'(meta data) to create/write files
+                    save_fmt = target_tile_file_format,   #format to save tiles as (ex: png,jpeg,geoTiff) 
+                    verbose = config['verbose']
+                )
             
-            ##Save Image Chips:
-            save_chips(array=split_array,                                     #split tile containing chips
-                         save_directory=chipsDir,                             #folder location to save chips in 
-                         tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
-                         profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
-                         chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
-                         verbose = config['verbose'])
+            ## Save the Image Chips
+            save_chips(
+                array=split_array,                                     #split tile containing chips
+                save_directory=chipsDir,                             #folder location to save chips in 
+                tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
+                profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
+                chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
+                verbose = config['verbose']
+            )
 
     
-    ##----------------------------Quick Summary------------------------------------##
+    # Summary
     if ts is not None:
         tileFiles = __listdir(directory=tilesDir,
                               extensions=['all']) 
@@ -403,13 +426,13 @@ def genImgChips():
         
         
     chipFiles = __listdir(directory=chipsDir,
-                           extensions=['all']) 
+                           extensions=['jpeg', 'tif']) 
                            
     vbPrint(f"Number of files created in {chipsDir}: {len(chipFiles)}\n{'-'*4}Image Chips made successfully{'-'*4}")
     
 def genAnnotations():
     """
-    Generates the train and test annotations files using the image and label chips
+    Generates the train and val annotations files using the image and label chips
     
     Requirements:
         * label chips should be available in <project_root>/labelChips_<ts>/..
@@ -418,14 +441,16 @@ def genAnnotations():
     Generates:
         * Two annotation files to be used by the model to train:
             1. <project_root>/annotations_<ts>/annotations_train.json
-            2. <project_root>/annotations_<ts>/annotations_test.json
+            2. <project_root>/annotations_<ts>/annotations_val.json
 
     """
     project_root = config['project_root']
     ts = config['ts']
+
+    # We support the case where both train and val label chips are in one directory and they need to be split. 
+    # The train to validation ratio controls the split. If tvRatio is 1.0 then either train or validation annotations are produced.
     tvRatio = config['tvRatio']
 
-    ts = config['ts']
     labelChipsDir = config['labelChipsDir']
     annDir = '%s/annotations_%s'%(project_root,ts)
 
@@ -436,40 +461,113 @@ def genAnnotations():
         vbPrint('Making dir: %s'%(annDir))
         os.mkdir(annDir)
 
+    train_or_val = Path(labelChipsDir).name
+    
+    # all the chips under labelChipsDir are either train (1.0) or val (0.0) 
+    if (tvRatio==1.0 or tvRatio==0.0):
+        
+        ## Getting the label chips
+        vbPrint('Reading `%s` for label chips'%(labelChipsDir))
+        labels = __listdir(labelChipsDir, ['tif', 'jpeg'])
+        vbPrint('Data  : %i'%(len(labels)))
+        data = np.asarray(labels)
+        
+        # Generate Annotations
+        vbPrint('Generating annotations for ' + train_or_val )
+        dataR2C = Raster2Coco(data, labelChipsDir,  has_gt=True)
+        dataJSON = dataR2C.createJSON()
+        
+        filepath = '%s/annotations_%s.json'%(annDir,train_or_val)
+        with open(filepath, 'w') as outfile:
+            json.dump(dataJSON, outfile)
+    # the chips under labelChipsDir need to be split into train and val
+    elif (tvRatio > 0.0 or tvRatio < 1.0):
+
+        ## Getting the label chips
+        vbPrint('Reading `%s` for label chips'%(labelChipsDir))
+        labels = __listdir(labelChipsDir, ['tif', 'jpeg'])
+        vbPrint('Dataset Size   : %i'%(len(labels)))
+        labels = np.asarray(labels)
+
+        # permute the chips  
+        np.random.shuffle(labels)
+        
+        # split
+        splitIdx = int(labels.shape[0]*tvRatio)
+        trainData,valData = np.split(labels,[splitIdx])
+        
+        vbPrint('Training Data  : %i'%(len(trainData)))
+        vbPrint('Val Data       : %i'%(len(valData)))
+        
+        # Generate Annotations
+        vbPrint('Generating annotations for the training data')
+        trainR2C = Raster2Coco(trainData, labelChipsDir,  has_gt=True)
+        trainJSON = trainR2C.createJSON()
+
+        with open('%s/annotations_train.json'%(annDir), 'w') as outfile:
+            json.dump(trainJSON, outfile)
+        
+        del trainJSON
+        del trainR2C
+
+        vbPrint('Generating annotations for the validation data')
+        valR2C = Raster2Coco(valData, labelChipsDir, has_gt=True)
+        valJSON = valR2C.createJSON()
+
+        with open('%s/annotations_val.json'%(annDir), 'w') as outfile:
+            json.dump(valJSON, outfile)
+        
+        del valJSON
+        del valR2C
+
+    vbPrint('Annotations made and saved successfully')
+
+
+def genImageInfo():
+    """
+    Generates the COCO-test dataset compatible image info files
+    
+    Requirements:
+        * Corresponding image chips should be available in <project_root>/imageChips_<ts>/..
+
+    Generates:
+        * COCO compatible JSON image info file
+            <project_root>/annotations_<ts>/image-info-test.json
+            
+    """
+    project_root = config['project_root']
+    ts = config['ts']
+    has_gt=config['has_gt']
+
+    chipsDir = config['imageChipsDir']
+    annDir = '%s/annotations_%s'%(project_root,ts)
+
+    ## Making the dirs
+    if(os.path.isdir(annDir)):
+        vbPrint('Found dir: %s'%(annDir))
+    else:
+        vbPrint('Making dir: %s'%(annDir))
+        os.mkdir(annDir)
+
     ## Getting the labels and splitting into training and validation images
-    vbPrint('Reading `%s` for label chips'%(labelChipsDir))
-    labels = __listdir(labelChipsDir, ['tif'])
-    vbPrint('Dataset Size   : %i'%(len(labels)))
-    labels = np.asarray(labels)
-    np.random.shuffle(labels)
-    splitIdx = int(labels.shape[0]*tvRatio)
-    trainData,valData = np.split(labels,[splitIdx])
+    vbPrint('Reading `%s` for chips'%(chipsDir))
+    chips  = __listdir(chipsDir, ['jpeg'])
+    vbPrint('Dataset Size   : %i'%(len(chips)))
+    chips = np.asarray(chips)
     
-    vbPrint('Training Data  : %i'%(len(trainData)))
-    vbPrint('Val Data       : %i'%(len(valData)))
+    # Generate image info 
+    vbPrint('Generating image info for the test data')
+    testR2C = Raster2Coco(chips, chipsDir, has_gt)
+    testJSON = testR2C.createJSON()
+
+    with open('%s/image_info_test.json'%(annDir), 'w') as outfile:
+        json.dump(testJSON, outfile)
     
-    # Generate Annotations
-    vbPrint('Generating annotations for the training data')
-    trainR2C = Raster2Coco(trainData, labelChipsDir)
-    trainJSON = trainR2C.createJSON()
+    del testJSON
+    del testR2C
 
-    with open('%s/annotations_train.json'%(annDir), 'w+') as outfile:
-        json.dump(trainJSON, outfile)
     
-    del trainJSON
-    del trainR2C
-
-    vbPrint('Generating annotations for the validation data')
-    valR2C = Raster2Coco(valData, labelChipsDir)
-    valJSON = valR2C.createJSON()
-
-    with open('%s/annotations_val.json'%(annDir), 'w+') as outfile:
-        json.dump(valJSON, outfile)
-    
-    del valJSON
-    del valR2C
-
-    vbPrint('Annotations made and saved successfuly')
+    vbPrint('Test Image Info JSON made and saved successfully')
 
 
 #----------------------------------------------------------------#
@@ -505,6 +603,7 @@ def genInferenceJSON():
     vbPrint('Initializing Inferences')
     os.system(shCmd)
     vbPrint('Completed')
+
 
 def genInferenceData():
     """
@@ -549,7 +648,6 @@ def genInferenceData():
     GenInferenceData Notes:
         * The saving images can be skipped using the argument '--genImgs=0'
         * The generation of geoJSON can be skipped with the argument '--genGeoJSON=0'
-        * If both arguments are provided, nothing is saved. (Possible use-case is for debugging)
     """
     project_root = config['project_root']
     ts = config['ts']
@@ -646,7 +744,6 @@ def genInferenceData():
     num_chips_per_tile_cols = config['colsSplitPerTile']
     expectedChips = num_chips_per_tile_rows*num_chips_per_tile_cols
 
-    
     projectionTransformer = pyproj.Transformer.from_crs("epsg:32111","epsg:4326",always_xy=False)
     #projectionTransformer = pyproj.Transformer.from_crs("epsg:4326", "epsg:6565", always_xy=False)
 
@@ -657,17 +754,19 @@ def genInferenceData():
 
     """
     For each tile, gets the detection masks and merges them into one image.
-    It seems that many chips are missing in inferences. It is assumed these don't have any detections and are skipped.
+    Chips that don't have any detections are skipped.
     """
     for i,tile in enumerate(tileMap.keys()):
         # Skipping tile if unexpected number of chips exist for the tile in the annotations JSON
         if(len(tileMap[tile])!=expectedChips):
             vbPrint('Found %i chips for tile %s. Skipping'%(len(tileMap[tile]), tile))
         else:
-            # The inference tile. Initialized with 0. Masks are overlayed at their respective locations.
+            # The inference tile. Initialized with 0. Inference chips are overlayed at their respective locations.
             infTile = np.zeros((num_chips_per_tile_rows*chipShape[0],num_chips_per_tile_cols*chipShape[1]),dtype=np.uint8)
-            
+            print(tile)
             for chipID,row,col in tileMap[tile]:
+                
+                #print('(%i, %i)'%(row, col))
                 # Overlays the chip mask at the correct location in infTile
                 # Skip any chips with no inference. It is assumed that no inference data is generated for chips with 0 detections.
                 if(chipID in infChipMap):
@@ -693,92 +792,88 @@ def genInferenceData():
                 # Getting affine transform parameters from the world file
                 with open('%s/%s.JGw'%(tilesDir,tile)) as worldFile:
                     world_file_rows = worldFile.read().split('\n')
-            
-            worldFile.close()
+                worldFile.close()
 
-            A = float(world_file_rows[0])
-            D = float(world_file_rows[1])
-            B = float(world_file_rows[2])
-            E = float(world_file_rows[3])
-            C = float(world_file_rows[4])
-            F = float(world_file_rows[5])
+                A = float(world_file_rows[0])
+                D = float(world_file_rows[1])
+                B = float(world_file_rows[2])
+                E = float(world_file_rows[3])
+                C = float(world_file_rows[4])
+                F = float(world_file_rows[5])
 
-            if(genImgs):
-                # Writing the inference image and the world tile
-                # File format kept as png because it has lossless compression and to work well with rasterio if needed.
-                cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
-                # write the pgw world file for the png inference images
-                with open('%s/%s.pgw'%(inferenceTilesDir,tile), 'w') as pgwFile:
-                    for i in range(len(world_file_rows)):
-                        pgwFile.writelines(world_file_rows[i]+'\n')
-                pgwFile.close()
+                if(genImgs):
+                    # Writing the inference image and the world tile
+                    # File format kept as png because it has lossless compression and to work well with rasterio if needed.
+                    cv2.imwrite('%s/%s.png'%(inferenceTilesDir,tile),infTile)
+                    # write the pgw world file for the png inference images
+                    with open('%s/%s.pgw'%(inferenceTilesDir,tile), 'w') as pgwFile:
+                        for i in range(len(world_file_rows)):
+                            pgwFile.writelines(world_file_rows[i]+'\n')
+                    pgwFile.close()
 
-            if(genGeoJSON):
-                vbPrint('Generating GeoJSON for tile %s'%tile)
-                with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+                if(genGeoJSON):
+                    vbPrint('Generating GeoJSON for tile %s'%tile)
+                    with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
 
-                    converter = Raster2Coco(None,None)
-                    binMask = np.zeros_like(infTile)
-                    binMask[infTile==255]=1
-                    vectors = converter.binaryMask2Polygon(binMask)
-                    JSONRows = ""
-                    
-                    for sidewalk in vectors:
-                        # Skipping any triangles
-                        if(len(sidewalk) >= 4):
-                            sidewalkCount += 1
-                            # Applying affine transform
-                            
-                            # print(('-'*10)+'\nSidewalk pixels vector')
-                            # print(sidewalk)
-                            
-                            # print(('-'*10)+'\nUTM Vector')
-                            # print(['[%f,%f]'%(
-                            #         ((A*x) + (B*y) + C,
-                            #         (D*x) + (E*y) + F)
-                            # ) for y,x in sidewalk])
+                        converter = Raster2Coco(None,None, config['has_gt'])
+                        binMask = np.zeros_like(infTile)
+                        binMask[infTile==255]=1
+                        vectors = converter.binaryMask2Polygon(binMask)
+                        JSONRows = ""
                         
-                            vecLi = ['[%f,%f]'%(
-                                    ((A*x) + (B*y) + C,
-                                    (D*x) + (E*y) + F)
-                            ) for x,y in sidewalk]
-
-                            # vecLi = ['[%f,%f]'%(
-                            #     projectionTransformer.transform(
-                            #         ((A*x) + (B*y) + C),
-                            #         ((D*x) + (E*y) + F)
-                            #     )[::-1]
-                            # ) for x,y in sidewalk]
-                            #print(('-'*10)+'\nlat long vector')
-                            #print(vecLi)
-
-                            vecStr = '[[%s]]'%(','.join(vecLi))
-                            #print(('-'*10)+'\nFinal vector string for ')
-                            #print('%s'%(vecStr))
-                            rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
+                        for sidewalk in vectors:
+                            # Skipping any triangles
+                            if(len(sidewalk) >= 4):
+                                sidewalkCount += 1
+                                # Applying affine transform
+                                
+                                # print(('-'*10)+'\nSidewalk pixels vector')
+                                # print(sidewalk)
+                                
+                                # print(('-'*10)+'\nUTM Vector')
+                                # print(['[%f,%f]'%(
+                                #         ((A*x) + (B*y) + C,
+                                #         (D*x) + (E*y) + F)
+                                # ) for y,x in sidewalk])
                             
-                            # Skip comma for first sidewalk
-                            if(sidewalkCount == 1):
-                                rowStr = rowStr[1:]
+                                vecLi = ['[%f,%f]'%(
+                                        ((A*x) + (B*y) + C,
+                                        (D*x) + (E*y) + F)
+                                ) for x,y in sidewalk]
 
-                            JSONRows += '%s'%(rowStr)
+                                # vecLi = ['[%f,%f]'%(
+                                #     projectionTransformer.transform(
+                                #         ((A*x) + (B*y) + C),
+                                #         ((D*x) + (E*y) + F)
+                                #     )[::-1]
+                                # ) for x,y in sidewalk]
+                                #print(('-'*10)+'\nlat long vector')
+                                #print(vecLi)
+
+                                vecStr = '[[%s]]'%(','.join(vecLi))
+                                #print(('-'*10)+'\nFinal vector string for ')
+                                #print('%s'%(vecStr))
+                                rowStr = ',\n{"type":"Feature","properties":{"objectid":%i}, "geometry":{ "type": "Polygon", "coordinates":%s}}'%(sidewalkCount,vecStr)
+                                
+                                # Skip comma for first sidewalk
+                                if(sidewalkCount == 1):
+                                    rowStr = rowStr[1:]
+
+                                JSONRows += '%s'%(rowStr)
+                            
+                        if(JSONRows != ""):
+                            geoJSONf.write(JSONRows)
                         
-                    if(JSONRows != ""):
-                        geoJSONf.write(JSONRows)
-                    geoJSONf.close()
+                    # Prints progress at every 'pef' factor of completion
+                    # PEF stands for 'Print-Every factor'
+                    facComp = (i+1)/(n)
+                    if(facComp >= peFactor):
+                        vbPrint('Generating inferences tile: %i/%i\t%0.2f %%'%(i+1,n,100*facComp))
+                        peFactor += config['pef']
 
-            # Prints progress at every 'pef' factor of completion
-            # PEF stands for 'Print-Every factor'
-            facComp = (i+1)/(n)
-            if(facComp >= peFactor):
-                vbPrint('Generating inferences tile: %i/%i\t%0.2f %%'%(i+1,n,100*facComp))
-                peFactor += config['pef']
-
-        # if(genGeoJSON):
-        #     with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
-        #         geoJSONf.write('\n]}')
-            
-            geoJSONf.close()
+    with open("%s/%s"%(inferenceGeoJSONDir,geoJSONFilename),'a+') as geoJSONf:
+        geoJSONf.write('\n]}')
+    geoJSONf.close()
 
     if(genGeoJSON and genImgs):
         vbPrint('Inference GeoJSON and Tiles generated Successfully')

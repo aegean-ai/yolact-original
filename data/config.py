@@ -109,11 +109,11 @@ dataset_base = Config({
     'name': 'Base Dataset',
 
     # Training images and annotations
-    'train_images': './data/coco/images/',
+    'train_images': '../data/coco/images/',
     'train_info':   'path_to_annotation_file',
 
     # Validation images and annotations.
-    'valid_images': './data/coco/images/',
+    'valid_images': '../data/coco/images/',
     'valid_info':   'path_to_annotation_file',
 
     # Whether or not to load GT. If this is False, eval.py quantitative evaluation won't work.
@@ -132,13 +132,41 @@ dataset_base = Config({
 dvrpc_dataset = dataset_base.copy({
     'name': 'DPRVC Pedestrian Network PA - Dataset 2020',
 
-    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/Train',
+    'train_images': '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/train',
     'train_info':   '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/DVRPC_train.json',
 
-    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/Test',
-    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/DVRPC_test.json',
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/val',
+    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/model-training/datasets/dvrpc-dataset-2015/DVRPC_val.json',
 
     'has_gt': True,
+    'class_names': ('sidewalk')
+})
+
+# -------- NJGIN Dataset ---------- *
+njgin_dataset = dataset_base.copy({
+    'name': 'NJGIN Imagery Chips 2020',
+
+    'train_images': None,
+    'train_info': None,
+
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root3/imageChips_ts3',
+    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root3/annotations_ts3/image_info_test.json',
+
+    'has_gt': False,
+    'class_names': ('sidewalk')
+})
+
+sidewalk_test_dataset = dataset_base.copy({
+    'name': 'Sidewalk Test Chips',
+
+    'train_images': None,
+    'train_info': None,
+
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root1/imageChips_ts1',
+    'valid_info': '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root1/annotations_ts1/image_info_test.json',
+
+
+    'has_gt': True, 
     'class_names': ('sidewalk')
 })
 
@@ -820,7 +848,7 @@ yolact_plus_resnet50_config = yolact_plus_base_config.copy({
 dvrpc_config = yolact_plus_resnet50_config.copy({
     'name': 'DVRPCResNet50',  # this name gets used for storing model files: NAME_XXX_YYY.pth
     
-    # Dataset stuff
+    # Dataset 
     'dataset': dvrpc_dataset,  # references the above dataset via its variable name
     'num_classes': 2,  # sidewalk + background
 
@@ -832,8 +860,31 @@ dvrpc_config = yolact_plus_resnet50_config.copy({
 dvrpc101_config = yolact_plus_base_config.copy({
     'name': 'DVRPCResNet101',  # this name gets used for storing model files: NAME_XXX_YYY.pth
     
-    # Dataset stuff
+    # Dataset 
     'dataset': dvrpc_dataset,  # references the above dataset via its variable name
+    'num_classes': 2,  # sidewalk + background
+
+    'max_iter': 120000,
+    'lr_steps': (60000, 100000),
+})
+
+# -------- NJGIN Config Resnet101 ---------- *
+njgin101_config = yolact_plus_base_config.copy({
+    'name': 'DVRPCResNet101',  # this name gets used for storing model files: NAME_XXX_YYY.pth
+    
+    # Dataset 
+    'dataset': njgin_dataset,  # references the above dataset via its variable name
+    'num_classes': 2,  # sidewalk + background
+
+    'max_iter': 120000,
+    'lr_steps': (60000, 100000),
+})
+
+sidewalk_test_config = yolact_plus_base_config.copy({
+    'name': 'DVRPCResNet101',  # this name gets used for storing model files: NAME_XXX_YYY.pth
+    
+    # Dataset 
+    'dataset': sidewalk_test_dataset,  # references the above dataset via its variable name
     'num_classes': 2,  # sidewalk + background
 
     'max_iter': 120000,

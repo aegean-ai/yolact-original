@@ -11,7 +11,7 @@ speedups.disable()
 def raster2array(rasters,band_no=1):
     """
     Arguments:
-    rast            A gdal Raster object
+    rasters            A gdal Raster object
     band_no         band numerical order
     Example :
     raster = gdal.Open(rasterfn)
@@ -113,11 +113,11 @@ def pixeloffset2coord(geoTransform,pixel_xOffset,pixel_yOffset):
 
 
 INFO = {
-    "description": "sidewalk test Dataset",
+    "description": "Sidewalk Validation Dataset",
     "url": "",
     "version": "0.1.0",
-    "year": 2019,
-    "contributor": "pantelis",
+    "year": 2020,
+    "contributor": "DVRPC",
     "date_created": datetime.datetime.utcnow().isoformat(' ')
 }
 
@@ -139,10 +139,11 @@ CATEGORIES = [
 
 class Raster2Coco():
     
-    def __init__(self, labelFiles, labelDir):
+    def __init__(self, files, dir, has_gt):
         
-        self.labelFiles = labelFiles
-        self.labelDir = labelDir
+        self.files = files
+        self.dir = dir
+        self.has_gt = has_gt
 
     def createJSON(self):
         self.cocoJSON = {
@@ -153,13 +154,13 @@ class Raster2Coco():
             "annotations": []
         }
         annotation_idx = 1
-        for img_idx, labelFile in enumerate(self.labelFiles):
+        for img_idx, labelFile in enumerate(self.files):
             self.genImgJSON(labelFile, img_idx+1, 1, annotation_idx + 10000 * img_idx)
 
         return(self.cocoJSON)
 
-    def genImgJSON(self, tiff_filepath, img_idx, band_no=1, annotation_idx=1):
-        rasters = gdal.Open('%s/%s'%(self.labelDir,tiff_filepath))
+    def genImgJSON(self, filepath, img_idx, band_no=1, annotation_idx=1):
+        rasters = gdal.Open('%s/%s'%(self.dir,filepath))
         raster_array = raster2array(rasters,band_no)
 
         #get size of image
@@ -168,19 +169,19 @@ class Raster2Coco():
         img_size = [img_Width,img_Height]
 
         #create image_info
-        #tiff_filepath = os.path.join(self.labelDir, os.path.basename(tiff_filepath))
-        image_info = self.create_image_info(img_idx,tiff_filepath,img_size)
+        image_info = self.create_image_info(img_idx,filepath,img_size)
         self.cocoJSON["images"].append(image_info)
 
-        # create annotations
-        polygons = self.binaryMask2Polygon(raster_array)
+        if self.has_gt==True:
+            # create annotations
+            polygons = self.binaryMask2Polygon(raster_array)
 
-        for idx,polygon in enumerate(polygons):
-            # TODO: understand why the threshold of 7 is used
-            if polygon.size > 7:
-                category_info = {'id':1,"is_crowd":0}
-                annotation_info = self.create_annotation_info(idx+annotation_idx,img_idx,category_info,polygon,img_size)
-                self.cocoJSON["annotations"].append(annotation_info)
+            for idx,polygon in enumerate(polygons):
+                # TODO: understand how to optimize the threshold below (polygon.size)
+                if polygon.size > 7:
+                    category_info = {'id':1,"is_crowd":0}
+                    annotation_info = self.create_annotation_info(idx+annotation_idx,img_idx,category_info,polygon,img_size)
+                    self.cocoJSON["annotations"].append(annotation_info)
 
 
     def binaryMask2Polygon(self,binaryMask):
