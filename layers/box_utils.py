@@ -97,7 +97,7 @@ def elemwise_box_iou(box_a, box_b):
 
 def mask_iou(masks_a, masks_b, iscrowd=False):
     """
-    Computes the pariwise mask IoU between two sets of masks of size [a, h, w] and [b, h, w].
+    Computes the pairwise mask IoU between two sets of masks of size [a, h, w] and [b, h, w].
     The output is of size [a, b].
 
     Wait I thought this was "box_utils", why am I putting this in here?

@@ -864,7 +864,7 @@ dvrpc101_config = yolact_plus_base_config.copy({
     'dataset': dvrpc_dataset,  # references the above dataset via its variable name
     'num_classes': 2,  # sidewalk + background
 
-    'max_iter': 120000,
+    'max_iter': 80020,#120000,
     'lr_steps': (60000, 100000),
 })
 

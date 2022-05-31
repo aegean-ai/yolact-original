@@ -251,8 +251,6 @@ def train():
                                   shuffle=True, collate_fn=detection_collate,
                                   pin_memory=True, generator=torch.Generator(device='cuda'))
     
-    
-
     save_path = lambda epoch, iteration: SavePath(cfg.name, epoch, iteration).get_path(root=args.save_folder)
     time_avg = MovingAverage()
 
@@ -499,7 +497,7 @@ def compute_validation_map(epoch, iteration, yolact_net, dataset, log:Log=None):
         yolact_net.train()
 
 def setup_eval():
-    eval_script.parse_args(['--no_bar', '--max_images='+str(args.validation_size)])
+    eval_script.parse_args(['--no_bar', '--max_images='+str(args.validation_size), '--output_coco_json'])
 
 if __name__ == '__main__':
     train()

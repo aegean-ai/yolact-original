@@ -46,7 +46,7 @@ def parse_args(argv=None):
     parser.add_argument('--top_k', default=5, type=int,
                         help='Further restrict the number of predictions to parse')
     parser.add_argument('--cuda', default=True, type=str2bool,
-                        help='Use cuda to evaulate model')
+                        help='Use cuda to evaluate model')
     parser.add_argument('--fast_nms', default=True, type=str2bool,
                         help='Whether to use a faster, but not entirely correct version of NMS.')
     parser.add_argument('--cross_class_nms', default=False, type=str2bool,
@@ -935,7 +935,7 @@ def evaluate(net:Yolact, dataset, train_mode=False):
 
             with timer.env('Load Data'):
                 img, gt, gt_masks, h, w, num_crowd = dataset.pull_item(image_idx)
-
+                print(image_idx)
                 # Test flag, do not upvote
                 if cfg.mask_proto_debug:
                     with open('scripts/info.txt', 'w') as f:
