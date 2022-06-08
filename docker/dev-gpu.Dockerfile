@@ -27,7 +27,7 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget ffmpeg libsm6 git ninja-build libglib2.0-0  libxrender-dev libxext6  build-essential python3-dev  binutils libproj-dev libcurl4\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget ffmpeg libsm6 git ninja-build libglib2.0-0  libxrender-dev libxext6  build-essential python3-dev  binutils libproj-dev libcurl4 tzdata\
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -67,10 +67,6 @@ COPY ./environment.yml /tmp/environment.yml
 RUN conda env update  --file /tmp/environment.yml
 
 RUN /opt/conda/bin/conda clean -ya
-
-# #This is now  replaced with conda gdal but kept here temporarily
-# # install GDAL - this is needed here as its currebtly unknown how to pass the options in the environment.yml file
-# RUN pip install GDAL==$(gdal-config --version) --global-option=build_ext --global-option="-I/usr/include/gdal"
 
 # the specific env
 ENV CONDA_DEFAULT_ENV=sidewalk-env
@@ -131,6 +127,9 @@ ENV PATH="/home/$USERNAME/.local/bin:${PATH}"
 # Specify matplotlib backend
 WORKDIR /${USERNAME}/.config/matplotlib
 RUN echo "backend : Agg" >> matplotlibrc
+
+RUN  ln -sf /usr/share/zoneinfo/America/New_York /etc/timezone && \
+    ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime && \
 
 WORKDIR /workspaces/sidewalk-detection
 

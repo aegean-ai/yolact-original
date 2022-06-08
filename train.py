@@ -497,7 +497,7 @@ def compute_validation_map(epoch, iteration, yolact_net, dataset, log:Log=None):
         yolact_net.train()
 
 def setup_eval():
-    eval_script.parse_args(['--no_bar', '--max_images='+str(args.validation_size), '--output_coco_json'])
+    eval_script.parse_args(['--no_bar', '--max_images='+str(args.validation_size)])
 
 if __name__ == '__main__':
     train()

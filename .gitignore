@@ -95,6 +95,10 @@ ENV/
 # weights
 weights/
 
+results/
+
+logs/
+
 #DS_Store
 .DS_Store
 

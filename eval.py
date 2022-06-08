@@ -935,47 +935,49 @@ def evaluate(net:Yolact, dataset, train_mode=False):
 
             with timer.env('Load Data'):
                 img, gt, gt_masks, h, w, num_crowd = dataset.pull_item(image_idx)
-                print(image_idx)
-                # Test flag, do not upvote
-                if cfg.mask_proto_debug:
-                    with open('scripts/info.txt', 'w') as f:
-                        f.write(str(dataset.ids[image_idx]))
-                    np.save('scripts/gt.npy', gt_masks)
+                if np.size(gt_masks): # if the image contains ground truth
 
-                batch = Variable(img.unsqueeze(0))
-                if args.cuda:
-                    batch = batch.cuda()
+                    # print(image_idx)
+                    # Test flag, do not upvote
+                    if cfg.mask_proto_debug:
+                        with open('scripts/info.txt', 'w') as f:
+                            f.write(str(dataset.ids[image_idx]))
+                        np.save('scripts/gt.npy', gt_masks)
 
-            with timer.env('Network Extra'):
-                preds = net(batch)
-            # Perform the meat of the operation here depending on our mode.
-            if args.display:
-                img_numpy = prep_display(preds, img, h, w)
-            elif args.benchmark:
-                prep_benchmark(preds, h, w)
-            else:
-                prep_metrics(ap_data, preds, img, gt, gt_masks, h, w, num_crowd, dataset.ids[image_idx], detections)
-            
-            # First couple of images take longer because we're constructing the graph.
-            # Since that's technically initialization, don't include those in the FPS calculations.
-            if it > 1:
-                frame_times.add(timer.total_time())
-            
-            if args.display:
-                if it > 1:
-                    print('Avg FPS: %.4f' % (1 / frame_times.get_avg()))
-                plt.imshow(img_numpy)
-                plt.title(str(dataset.ids[image_idx]))
-                plt.show()
-            elif not args.no_bar:
-                if it > 1: fps = 1 / frame_times.get_avg()
-                else: fps = 0
-                progress = (it+1) / dataset_size * 100
-                progress_bar.set_val(it+1)
-                #print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
-                    #% (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
-                print('\rProcessing Images  %6d / %6d (%5.2f%%)    %5.2f fps        '
-                    % (it+1, dataset_size, progress, fps), end='')
+                    batch = Variable(img.unsqueeze(0))
+                    if args.cuda:
+                        batch = batch.cuda()
+
+                    with timer.env('Network Extra'):
+                        preds = net(batch)
+                    # Perform the meat of the operation here depending on our mode.
+                    if args.display:
+                        img_numpy = prep_display(preds, img, h, w)
+                    elif args.benchmark:
+                        prep_benchmark(preds, h, w)
+                    else:
+                        prep_metrics(ap_data, preds, img, gt, gt_masks, h, w, num_crowd, dataset.ids[image_idx], detections)
+                    
+                    # First couple of images take longer because we're constructing the graph.
+                    # Since that's technically initialization, don't include those in the FPS calculations.
+                    if it > 1:
+                        frame_times.add(timer.total_time())
+                    
+                    if args.display:
+                        if it > 1:
+                            print('Avg FPS: %.4f' % (1 / frame_times.get_avg()))
+                        plt.imshow(img_numpy)
+                        plt.title(str(dataset.ids[image_idx]))
+                        plt.show()
+                    elif not args.no_bar:
+                        if it > 1: fps = 1 / frame_times.get_avg()
+                        else: fps = 0
+                        progress = (it+1) / dataset_size * 100
+                        progress_bar.set_val(it+1)
+                        #print('\rProcessing Images  %s %6d / %6d (%5.2f%%)    %5.2f fps        '
+                            #% (repr(progress_bar), it+1, dataset_size, progress, fps), end='')
+                        print('\rProcessing Images  %6d / %6d (%5.2f%%)    %5.2f fps        '
+                            % (it+1, dataset_size, progress, fps), end='')
 
 
 
