@@ -54,10 +54,11 @@ from rasterio import coords
 import rasterio.plot                           
 import rasterio.mask           
 from osgeo import gdal, osr        
-from os import listdir
+
 from os.path import isfile, join
 from pathlib import Path
 import shutil
+from os import makedirs, walk, listdir
 
 
 def __init__():
@@ -155,10 +156,22 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
     """
     
     # get a list of files under the directory specified in path
-    files = [f for f in listdir(sourceDir) if isfile(join(sourceDir, f))]
+    files = find_files(sourceDir, '*.tif')
+    #files.append(find_files(sourceDir, '*.JPEG'))
+
+
+    # files = []
+    # for (sourceDir, dir_names, file_names) in walk(sourceDir):
+    #     files.extend(file_names)
+    #     # don't look inside any subdirectory
+    #     break
     
+    # # make a tmp dir to keep intermediate outputs (such as GDAL intermediate outputs)
+    # if not join(targetDir, '../tmp') :
+    #     makedirs(join(targetDir, '../tmp'))
+
     for f in files:
-        input_path_filename = Path(join(sourceDir,f))
+        input_path_filename = Path(f.as_posix())
         
         
         if input_path_filename.suffix in ['.tif', '.TIF', '.tiff', '.TIFF']:
@@ -171,6 +184,8 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
             # prj=dataset.GetProjection()
 
             #values = dataset.ReadAsArray()
+
+            num_bands = dataset.RasterCount
 
             band = dataset.GetRasterBand(1)
 
@@ -187,10 +202,13 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
             # The bandList will determine if the tiles will be in pseudo (NIR-G-B -> R-G-B) or natural color (R-G-B -> R-G-B)  
             # In pseudo color: bandList = [4, 2, 3]
             # In natural color: bandList = [1, 2, 3]
-            if sourceIsNearInfrared:
-                band_list=[4, 2, 3]
+            if num_bands==1:
+                band_list=[1]
             else:
-                band_list=[1,2,3]
+                if sourceIsNearInfrared:
+                    band_list=[4, 2, 3]
+                else:
+                    band_list=[1,2,3]
 
             translate_options = gdal.TranslateOptions(
                 options = [], format = 'JPEG',
@@ -209,7 +227,37 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
             # Set output file to JPEG
             output_image_filename =  input_path_filename.stem + '.JPEG'
             output_image_path_filename = join(targetDir,output_image_filename)
-           
+
+            # # the JPEG driver doesn’t allow you to create a multiband image and then add data to the bands. Fortunately, VRTs can come to your rescue https://gdal.org/drivers/raster/vrt.html. All you need to do is create a VRT that defines the output you want, and then use the JPEG (or whatever format) driver’s CreateCopy function. For example, to create a JPEG, open up the VRT and then copy it to a JPEG.
+
+            # xml = '''
+            # <SimpleSource>
+            #     <SourceFilename>{0}</SourceFilename>
+            #         <SourceBand>4</SourceBand>
+            #         <SourceBand>2</SourceBand>
+            #         <SourceBand>3</SourceBand>
+            # </SimpleSource>
+            # '''
+            
+            # ds = gdal.Open('vashon.vrt')
+            # gdal.GetDriverByName('jpeg').CreateCopy('vashon.jpg', ds)
+
+            #driver = gdal.GetDriverByName("JP2OpenJPEG") 
+
+            # # Create new GTiff (Byte type)
+            # driver = gdal.GetDriverByName("GTiff")
+            # intermediate_image_filename = input_path_filename.stem + '.tif'
+            # intermediate_image_path_filename = join(join(targetDir, '../tmp'), intermediate_image_filename)
+            # intermediateDS = driver.Create(intermediate_image_path_filename, band.XSize, band.YSize, 1, gdal.GDT_Byte)
+
+            # driver = gdal.GetDriverByName('JPEG') 
+            #outDS = driver.CreateCopy(output_image_path_filename, dataset)#, 7000, 7000, 1, gdal.GDT_Byte)
+
+            # gdal.Translate(
+            #     destName=output_image_path_filename,
+            #     srcDS=intermediateDS,
+            #     options=translate_options
+            # )
             gdal.Translate(
                 destName=output_image_path_filename,
                 srcDS=input_path_filename.as_posix(),
@@ -235,38 +283,6 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
             output_world_path_filename = Path(output_world_path_filename)
             new_output_world_filename = output_world_path_filename.stem + '.JGw'
             shutil.copy(input_path_filename.as_posix(), output_world_path_filename.parent + new_output_world_filename)
-
-            
-          
-            # # Create new GTiff (Byte type)
-            # driver = gdal.GetDriverByName("GTiff")
-            # dst_ds = driver.Create(output_file, band.XSize, band.YSize, 1, gdal.GDT_Byte)
-
-            # print("rows = ", band.YSize, "columns = ", band.XSize)
-
-            # print("Executing...")
-
-            # # for i in range(band.YSize):
-            # #     for j in range(band.XSize):
-            # #         values[i][j]
-
-            # dst_ds.GetRasterBand(1).WriteArray( values )
-
-            # # top left x, w-e pixel resolution, rotation, top left y, rotation, n-s pixel resolution
-            # dst_ds.SetGeoTransform( [ geotransform[0], geotransform[1], 0, geotransform[3], 0, geotransform[5] ] )
-
-            # # set projection of new raster
-            # dst_ds.SetProjection( prj )
-
-            # dataset = None
-
-            # scale = '-scale'+ str(min) + ' ' + str(max)
-            # options_list = [
-            #     '-ot Byte',
-            #     '-of JPEG',
-            #     scale
-            # ] 
-            # options_string = " ".join(options_list)
 
             
 def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
@@ -564,9 +580,9 @@ def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_na
     
     tile_affine = profile['transform']
 
-    if chip_file_format == 'jpg' or 'jpeg':
+    if chip_file_format in ['jpg', 'jpeg']:
         profile['driver'] = 'JPEG'
-    elif chip_file_format=='tiff' or 'tif':
+    elif chip_file_format in ['tiff', 'tif']:
         profile['driver'] = 'GTiff'
     
     profile['count'] = array.shape[0]                                               #band count
@@ -642,3 +658,10 @@ def save_tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, p
         __make_worldfile(profile['transform'], tile_path,verbose)                       #method for creating a world file. (a document that contains key affine info)
     
     print(f'Save Completed to {save_directory}\n') if verbose else None
+
+def find_files(directory, pattern): 
+    """
+    Returns a list of the directories that the pattern is found
+    """
+    p = Path(directory)
+    return list(p.glob('**/' + pattern))

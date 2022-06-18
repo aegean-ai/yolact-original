@@ -52,6 +52,15 @@ RUN mv MrSID_DSDK-9.5.4.4709-rhel6.x86-64.gcc531 sdk
 ENV PATH="/workspaces/mrsid/sdk/Raster_DSDK/bin:${PATH}"
 ENV PATH="/workspaces/mrsid/sdk/Lidar_DSDK/bin:${PATH}"
 
+# Install dependencies of label-maker
+RUN mkdir -p /workspaces/tippecanoe
+RUN git clone https://github.com/mapbox/tippecanoe.git /workspaces/tippecanoe
+WORKDIR /workspaces/tippecanoe
+RUN make -j
+RUN make install
+
+WORKDIR /workspaces
+
 # Note that yolactpp is using DCNv2_latest and this is a submodule 
 # in the .gitmodules files we list the specific branch (pytorch version that we need)
 RUN git clone --recurse-submodules -b model-performance-verification https://github.com/upabove-app/yolact-original.git /yolactpp
@@ -125,11 +134,11 @@ RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhisto
 ENV PATH="/home/$USERNAME/.local/bin:${PATH}"
 
 # Specify matplotlib backend
-WORKDIR /${USERNAME}/.config/matplotlib
+WORKDIR /home/${USERNAME}/.config/matplotlib
 RUN echo "backend : Agg" >> matplotlibrc
 
-RUN  ln -sf /usr/share/zoneinfo/America/New_York /etc/timezone && \
-    ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime && \
+# RUN  ln -sf /usr/share/zoneinfo/America/New_York /etc/timezone && \
+#     ln -sf /usr/share/zoneinfo/America/New_York /etc/localtime && \
 
 WORKDIR /workspaces/sidewalk-detection
 

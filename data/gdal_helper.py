@@ -34,9 +34,8 @@ import osgeo.gdal as gdal
 from calcDist import dist, getPoints
 
 
-#---------------------------------------Helper Functions:
-
-def __checkPassed(a,b,c,verbose):                                               #used in __convert_dims
+#used in __convert_dims
+def __checkPassed(a,b,c,verbose):
     """
     Notes:
         internal logic to determine if correct information was passed in __convert_dims
