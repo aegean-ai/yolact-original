@@ -104,8 +104,8 @@ config = {
     'tileDimY':5000, # Tile Dimension Y
     'mWH': '5000,5000', # maximum Width/Height of tiles: used in genImageChips
     'file_extensions':'jpeg, jpg, jgw, png, pgw, tiff, tif, tfw', # image formats to consider when reading files
-    'region_file_format': 'tif',
-    'region_image_near_infrared':True,
+    'input_file_format': 'tif',
+    'input_image_near_infrared':True,
     'source_tile_file_format': 'jpeg',
     'target_tile_file_format': 'jpeg',
     'chip_file_format': 'jpeg', #'tif', ## Save format for generated chips in genImageChips
@@ -363,19 +363,14 @@ def genImgChips():
     __make_folders(rootfolder=project_root,                                               ##Make folder to hold chips
                    subfolder=chipsDir)                                        #method for making project rootfolder/subfolders
     
-    
-    # if config['region_file_format']=='tif':
-    #     source_is_tif=True
-    # else:
-    #     source_is_tif=False
-    
+        
     # if the tile has 4 bands with band 4 being the Near Infra Red (NIR) band the  say so
-    if config['region_image_near_infrared']:
-        region_image_near_infrared=True
+    if config['input_image_near_infrared']:
+        input_image_near_infrared=True
 
     # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
     if not target_tile_file_format==source_tile_file_format:
-        convert_tiles(sourceIsNearInfrared=region_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=regionDir, targetDir=regionDir)
+        convert_tiles(sourceIsNearInfrared=input_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=regionDir, targetDir=regionDir)
 
     # list of tiles converted to JPEG that need further split into chips
     tilesFiles = __listdir(directory=regionDir, extensions=target_tile_file_format)                             
@@ -388,6 +383,150 @@ def genImgChips():
         #Open raster files & apply window to generate chips 
         for tile_array, tile_meta, tile_name in open_raster(
             path_to_files = image_path,      #current tile
+            maxWidth = window['width'],       #this is maxWidth/maxHeight
+            maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
+            verbose = config['verbose']):
+                                                             
+            if 0 in tile_array.shape:
+                vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
+                continue
+            
+            ## Creation of Image chips
+            split_array = split_raster(
+                image_array=tile_array,                        #current tile to split into chips
+                chipX = 256,                            #chip width
+                chipY = 256,                            #chip height
+                minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
+                verbose = config['verbose']
+            )
+        
+            # if we specify a tileset to save then save the tiles. 
+            # otherwise if the source tiles are Tif, the tileset would already contain the required JPEG tiles 
+            if ts is not None:
+                save_tile(
+                    array=tile_array,              #tile array
+                    save_directory=tilesDir,        #folder location to save tile in 
+                    tile_name=tile_name,            #chips will be named as: region_tile_{tileXpos}_{tileYpos}
+                    profile = tile_meta,                 #rasterio requires a 'profile'(meta data) to create/write files
+                    save_fmt = target_tile_file_format,   #format to save tiles as (ex: png,jpeg,geoTiff) 
+                    verbose = config['verbose']
+                )
+            
+            ## Save the Image Chips
+            save_chips(
+                array=split_array,                                     #split tile containing chips
+                save_directory=chipsDir,                             #folder location to save chips in 
+                tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
+                profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
+                chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
+                verbose = config['verbose']
+            )
+
+    
+    # Summary
+    if ts is not None:
+        tileFiles = __listdir(directory=tilesDir,
+                              extensions=['all']) 
+        vbPrint(f"Number of files created in {tilesDir}: {len(tileFiles)}\n{'-'*4}Image Tiles made successfully{'-'*4}")
+        
+        
+    chipFiles = __listdir(directory=chipsDir,
+                           extensions=['jpeg', 'tif']) 
+                           
+    vbPrint(f"Number of files created in {chipsDir}: {len(chipFiles)}\n{'-'*4}Image Chips made successfully{'-'*4}")
+
+
+@__time_this  
+def genTrainingImgChips():
+    """
+    Notes: 
+        Generates training dataset image tiles and chips. Only tiles that have annotations and they exist as label Tiles will be generated. 
+        For those generated tiles, we generate all chips irrespective of the presence of annotations. 
+        
+    Inputs: 
+        imagery root directory
+        mWH (int): maximum Width/Height of tiles
+        file_extensions (str): what raster file types should be converted to chips 
+                        (this is important since image files are associated w/ other file type like an .xml,.cpg,.dbf this makes sure those are ignored)
+        chip_file_format (str): file format for chips. Exs: jpeg, png
+    
+    outputs:
+        folder containing chip image-files and any support files. 
+
+    Example:
+        python3 pipeline_e2e.py --project_root=project_root --fs=labels --file_extensions=tif --chip_file_format=png --mWH=5000,5000 -genImgChips
+    
+    """
+
+    ##----------------------------Configuration/Setup---------------------------##
+    project_root = config['project_root']                                                           #dataset (root folder)
+    fs = config['fs']                                                           #existing fileset (subfolder)
+    ts = config['ts']                                                           #optional tileset (subfolder). Default is None, which means no tiles will be saved.
+    
+    window = __getWindow(window_config=config['mWH'])                           #dictonary w/ max window dimensions (default: width:5000,height:5000) 
+    
+    file_formats = config['file_extensions'].replace(' ','').split(',')                    #convert string of file formats to list of formats
+    source_tile_file_format = config['source_tile_file_format']                                                   #file format for tiles
+    target_tile_file_format = config['target_tile_file_format']                                                   #file format for tiles
+    chip_file_format = config['chip_file_format']                                                   #file format for chips when they are saved. (png,jpeg,tif) https://gdal.org/drivers/raster/index.html
+
+    # The path to imagery 
+    trainingImageryRootPath = config['trainingImageryRootPath']                               
+
+    # We need to consult the labelTiles dir as not all imagery was converted to labelTiles - images that didnt have any features annotations were ignored.  
+    labelTilesPath = '%s/labelTiles_%s'%(project_root,ts)
+    labelTileFiles = __listdir(directory=labelTilesPath, extensions=file_formats)                             #list of files to convert to chips
+    
+    # The image tiles in the desired format and CRS 
+    tilesDir = '%s/imageTiles_%s'%(project_root,ts)
+    __make_folders(rootfolder=project_root,
+                    subfolder=tilesDir)    
+    
+    # The image chips
+    chipsDir = '%s/imageChips_%s'%(project_root,ts)                                   
+    __make_folders(rootfolder=project_root,                                               ##Make folder to hold chips
+                   subfolder=chipsDir)                                        #method for making project rootfolder/subfolders
+    
+    imagery_tiles_filepath=[]
+    imagery_tiles = []
+    pattern = '*.'+config['input_file_format']
+    for root, dirs, files in os.walk(trainingImageryRootPath):
+        for filename in fnmatch.filter(files, pattern):
+            imagery_tiles_filepath.append(os.path.join(root, filename))
+            imagery_tiles.append(filename)
+           
+    print('Number of imagery  tiles', len(imagery_tiles))
+
+    # if the tile has 4 bands with band 4 being the Near Infra Red (NIR) band the  say so
+    if config['input_image_near_infrared']:
+        input_image_near_infrared=True
+
+    # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
+    if not target_tile_file_format==source_tile_file_format:
+        convert_tiles(sourceIsNearInfrared=input_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=trainingImageryRootPath, targetDir=tilesDir)
+
+    # list of tiles converted to JPEG that need further split into chips. Only imagery that has a label tile is processed.
+    tilesFiles = __listdir(directory=labelTilesPath, extensions=target_tile_file_format)                             
+    
+    # Loop over tiles
+    for count, imageName in enumerate(tilesFiles):
+
+        basename_without_ext = os.path.splitext(os.path.basename(imageName))[0]
+        filename = basename_without_ext+ '.' + config['input_file_format']
+        print(filename)
+        try: 
+            index = imagery_tiles.index(filename)
+        except ValueError:
+            continue
+        
+        corresponding_imagery_tile_file_path = imagery_tiles_filepath[index]
+
+        
+        vbPrint(f'Current Image Path: {corresponding_imagery_tile_file_path}')
+        
+        #Open raster files & apply window to generate chips 
+        for tile_array, tile_meta, tile_name in open_raster(
+            path_to_files = corresponding_imagery_tile_file_path,      #current tile
             maxWidth = window['width'],       #this is maxWidth/maxHeight
             maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
             verbose = config['verbose']):
@@ -959,11 +1098,11 @@ def genTileGeoJSONs():
     __make_folders(rootfolder=project_root,
                     subfolder=tileFeoJSONsDir)    
     
-    geoJSONRootPathFile = config['FeaturesGeoJSONRootPathFile']
+    geoJSONRootPathFile = config['featuresGeoJSONRootPathFile']
     
     tileindexRootPathFile = config['tileIndexPathFile']
     
-    target_crs = 'EPSG:6565'
+    target_crs = 'EPSG:6347'
 
     # Partition the whole area feature geoJSON to per-tile feature geoJSONs
     geojson_tiles = _partitionGeoJSON(geoJSONRootPathFile, tileindexRootPathFile,tileFeoJSONsDir, target_crs=target_crs)
@@ -1012,7 +1151,7 @@ def genLabelTiles():
 
     trainingImageryRootPath=config['trainingImageryRootPath']
     
-    target_crs = 'EPSG:6565'
+    target_crs = 'EPSG:6347'
 
     # Create label tiles 
     # First create a list of the imagery tiles that will act as template tiles https://rasterio.readthedocs.io/en/latest/cli.html?highlight=geojson#rasterize from 
@@ -1020,7 +1159,7 @@ def genLabelTiles():
 
     imagery_tiles_filepath=[]
     imagery_tiles = []
-    pattern = '*.'+config['region_file_format']
+    pattern = '*.'+config['input_file_format']
     for root, dirs, files in os.walk(trainingImageryRootPath):
         for filename in fnmatch.filter(files, pattern):
             imagery_tiles_filepath.append(os.path.join(root, filename))
@@ -1038,10 +1177,15 @@ def genLabelTiles():
 
         # Incorporate properties to GeoJSON tile such as the corresponding imagery raster tile size that is needed for creating the label rasters
         basename_without_ext = os.path.splitext(os.path.basename(geojson_filepath))[0]
-        index = imagery_tiles.index(basename_without_ext+ '.' + config['region_file_format'])
+        filename = basename_without_ext+ '.' + config['input_file_format']
+        print(filename)
+        try: 
+            index = imagery_tiles.index(filename)
+        except ValueError:
+            continue
         corresponding_imagery_tile_file_path = imagery_tiles_filepath[index]
         dataset = rio.open(corresponding_imagery_tile_file_path)
-   
+
         # Read in vector
         vector = gpd.read_file(geojson_filepath)
 
@@ -1064,7 +1208,7 @@ def genLabelTiles():
         # subprocess.run(['gdal_rasterize', '-ts', str(tile_dim_x), str(tile_dim_y), '-a_nodata', '0', '-burn', '255', '-co', 'COMPRESS=LZW', geojson_filepath, label_tile_filepath],
         #     env={'PROJ_LIB':'/opt/conda/envs/sidewalk-env/share/proj'})
 
-        subprocess.run(['gdal_rasterize', '-ts', str(vector['width'][0]), str(vector['height'][0]),  '-tr', str(1.0), str(1.0), '-burn', '1', '-co', 'COMPRESS=LZW', geojson_filepath, label_tile_filepath],
+        subprocess.run(['gdal_rasterize', '-ts', str(vector['width'][0]), str(vector['height'][0]), '-te', str(dataset.bounds.left), str(dataset.bounds.bottom), str(dataset.bounds.right), str(dataset.bounds.top), '-burn', '1', '-co', 'COMPRESS=LZW', geojson_filepath, label_tile_filepath],
             env={'PROJ_LIB':'/opt/conda/envs/sidewalk-env/share/proj'})
 
 
@@ -1106,9 +1250,6 @@ def genLabelChips():
     source_tile_file_format = config['source_tile_file_format']                                                   #file format for tiles
     target_tile_file_format = config['target_tile_file_format']                                                   #file format for tiles
     chip_file_format = config['chip_file_format']                                                   #file format for chips when they are saved. (png,jpeg,tif) https://gdal.org/drivers/raster/index.html
-
-    # regionDir = '%s/region_%s'%(project_root, fs)                                           #directory with files to convert to chips 
-    # regionFiles = __listdir(directory=regionDir, extensions=file_formats)                             #list of files to convert to chips
     
     labelTilesDir = '%s/labelTiles_%s'%(project_root,ts)                                           #directory with files to convert to chips 
                             

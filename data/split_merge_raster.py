@@ -157,19 +157,7 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
     
     # get a list of files under the directory specified in path
     files = find_files(sourceDir, '*.tif')
-    #files.append(find_files(sourceDir, '*.JPEG'))
-
-
-    # files = []
-    # for (sourceDir, dir_names, file_names) in walk(sourceDir):
-    #     files.extend(file_names)
-    #     # don't look inside any subdirectory
-    #     break
-    
-    # # make a tmp dir to keep intermediate outputs (such as GDAL intermediate outputs)
-    # if not join(targetDir, '../tmp') :
-    #     makedirs(join(targetDir, '../tmp'))
-
+   
     for f in files:
         input_path_filename = Path(f.as_posix())
         
@@ -228,36 +216,6 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
             output_image_filename =  input_path_filename.stem + '.JPEG'
             output_image_path_filename = join(targetDir,output_image_filename)
 
-            # # the JPEG driver doesn’t allow you to create a multiband image and then add data to the bands. Fortunately, VRTs can come to your rescue https://gdal.org/drivers/raster/vrt.html. All you need to do is create a VRT that defines the output you want, and then use the JPEG (or whatever format) driver’s CreateCopy function. For example, to create a JPEG, open up the VRT and then copy it to a JPEG.
-
-            # xml = '''
-            # <SimpleSource>
-            #     <SourceFilename>{0}</SourceFilename>
-            #         <SourceBand>4</SourceBand>
-            #         <SourceBand>2</SourceBand>
-            #         <SourceBand>3</SourceBand>
-            # </SimpleSource>
-            # '''
-            
-            # ds = gdal.Open('vashon.vrt')
-            # gdal.GetDriverByName('jpeg').CreateCopy('vashon.jpg', ds)
-
-            #driver = gdal.GetDriverByName("JP2OpenJPEG") 
-
-            # # Create new GTiff (Byte type)
-            # driver = gdal.GetDriverByName("GTiff")
-            # intermediate_image_filename = input_path_filename.stem + '.tif'
-            # intermediate_image_path_filename = join(join(targetDir, '../tmp'), intermediate_image_filename)
-            # intermediateDS = driver.Create(intermediate_image_path_filename, band.XSize, band.YSize, 1, gdal.GDT_Byte)
-
-            # driver = gdal.GetDriverByName('JPEG') 
-            #outDS = driver.CreateCopy(output_image_path_filename, dataset)#, 7000, 7000, 1, gdal.GDT_Byte)
-
-            # gdal.Translate(
-            #     destName=output_image_path_filename,
-            #     srcDS=intermediateDS,
-            #     options=translate_options
-            # )
             gdal.Translate(
                 destName=output_image_path_filename,
                 srcDS=input_path_filename.as_posix(),
