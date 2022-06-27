@@ -116,8 +116,8 @@ INFO = {
     "description": "Sidewalk Validation Dataset",
     "url": "",
     "version": "0.1.0",
-    "year": 2020,
-    "contributor": "DVRPC",
+    "year": 2022,
+    "contributor": "Aegean AI",
     "date_created": datetime.datetime.utcnow().isoformat(' ')
 }
 
@@ -139,13 +139,14 @@ CATEGORIES = [
 
 class Raster2Coco():
     
-    def __init__(self, files, dir, has_gt):
+    def __init__(self, files_array, dir, has_gt):
         
-        self.files = files
-        self.dir = dir
+        self.files_array = files_array
+        self.input_dir = dir
         self.has_gt = has_gt
 
     def createJSON(self):
+
         self.cocoJSON = {
             "info": INFO,
             "licenses": LICENSES,
@@ -153,23 +154,29 @@ class Raster2Coco():
             "images": [],
             "annotations": []
         }
-        annotation_idx = 1
-        for img_idx, labelFile in enumerate(self.files):
-            self.genImgJSON(labelFile, img_idx+1, 1, annotation_idx + 10000 * img_idx)
-
+       
         return(self.cocoJSON)
 
-    def genImgJSON(self, filepath, img_idx, band_no=1, annotation_idx=1):
-        rasters = gdal.Open('%s/%s'%(self.dir,filepath))
-        raster_array = raster2array(rasters,band_no)
+    def genDirAnnotations(self, band_number):
 
-        #get size of image
-        img_Width = rasters.RasterXSize
-        img_Height = rasters.RasterYSize
-        img_size = [img_Width,img_Height]
+        annotation_idx = 1
+        for img_idx, labelFile in enumerate(self.files_array):
+            
+            raster = gdal.Open('%s/%s'%(self.input_dir,labelFile))
+            raster_array = raster2array(raster, band_number)
+
+            self.genImgJSON(raster_array, labelFile,  img_idx+1, 1, annotation_idx + 10000 * img_idx, annotation_threshold=7)
+        
+        return(self.cocoJSON)
+    
+    def genImgJSON(self, raster_array, filename, img_idx, band_no=1, annotation_idx=1, annotation_threshold=7):
+        
+        
+        img_size = [raster_array.shape[0],raster_array.shape[1]]
 
         #create image_info
-        image_info = self.create_image_info(img_idx,filepath,img_size)
+        image_info = self.create_image_info(img_idx, filename, img_size)
+        
         self.cocoJSON["images"].append(image_info)
 
         if self.has_gt==True:
@@ -177,11 +184,12 @@ class Raster2Coco():
             polygons = self.binaryMask2Polygon(raster_array)
 
             for idx,polygon in enumerate(polygons):
-                # TODO: understand how to optimize the threshold below (polygon.size)
-                if polygon.size > 7:
-                    category_info = {'id':1,"is_crowd":0}
-                    annotation_info = self.create_annotation_info(idx+annotation_idx,img_idx,category_info,polygon,img_size)
-                    self.cocoJSON["annotations"].append(annotation_info)
+                # # TODO: understand how to optimize the threshold below
+                # if polygon.size > annotation_threshold:
+                category_info = {'id':1,"is_crowd":0}
+                annotation_info = self.create_annotation_info(idx+annotation_idx, img_idx, category_info, polygon, img_size)
+                
+                self.cocoJSON["annotations"].append(annotation_info)
 
 
     def binaryMask2Polygon(self,binaryMask):
@@ -189,7 +197,7 @@ class Raster2Coco():
         polygons =[]
 
         padded_binary_mask = np.pad(binaryMask, pad_width=1, mode='constant', constant_values=0)
-        contours = measure.find_contours(padded_binary_mask,0.5)
+        contours = measure.find_contours(padded_binary_mask)
         contours = np.subtract(contours, 1)
 
         def closeContour(contour):

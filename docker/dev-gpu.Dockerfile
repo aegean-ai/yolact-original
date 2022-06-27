@@ -27,12 +27,16 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y wget ffmpeg libsm6 git ninja-build libglib2.0-0  libxrender-dev libxext6  build-essential python3-dev  binutils libproj-dev libcurl4 tzdata\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y wget ffmpeg libsm6 git ninja-build libglib2.0-0  libxrender-dev libxext6  build-essential python3-dev  binutils software-properties-common libcurl4 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# ------------------------- GIS --------------------------------------------------------------------------------------------------------------------------------------------------
+RUN apt-get update && \ 
+    add-apt-repository ppa:ubuntugis/ppa
+
 RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y gdal-bin libgdal-dev \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y libgeos-dev libproj-dev gdal-bin libgdal-dev tzdata \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -58,6 +62,8 @@ RUN git clone https://github.com/mapbox/tippecanoe.git /workspaces/tippecanoe
 WORKDIR /workspaces/tippecanoe
 RUN make -j
 RUN make install
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 WORKDIR /workspaces
 

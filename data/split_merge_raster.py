@@ -59,7 +59,7 @@ from os.path import isfile, join
 from pathlib import Path
 import shutil
 from os import makedirs, walk, listdir
-
+import subprocess
 
 def __init__():
     pass
@@ -161,7 +161,8 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
     for f in files:
         input_path_filename = Path(f.as_posix())
         
-        
+        print('Converting into JPEG the tile ' + str(input_path_filename))
+
         if input_path_filename.suffix in ['.tif', '.TIF', '.tiff', '.TIFF']:
             
             dataset = gdal.Open(input_path_filename.as_posix())
@@ -186,7 +187,7 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
                 (min_val,max_val) = band.ComputeRasterMinMax(1)
 
             #print("Min=%.3f, Max=%.3f" % (min_val,max_val)) #print minimum and maximum values
-
+            # See also https://medium.com/the-downlinq/creating-training-datasets-for-the-spacenet-road-detection-and-routing-challenge-6f970d413e2f
             # The bandList will determine if the tiles will be in pseudo (NIR-G-B -> R-G-B) or natural color (R-G-B -> R-G-B)  
             # In pseudo color: bandList = [4, 2, 3]
             # In natural color: bandList = [1, 2, 3]
@@ -222,6 +223,11 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
                 options=translate_options
             )
             
+            # delete the original tif tile
+            subprocess.run(
+                ['rm', input_path_filename.as_posix()]
+            )
+
         elif input_path_filename.suffix in ['.jpg', '.jpeg', '.JPG', '.JPEG']:
             # copy the image file from the region to tiles directory
            
@@ -244,6 +250,7 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
 
             
 def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
+
         """
             Converts / reads the data into a numpy array,
             return summary of information if needed
@@ -255,8 +262,6 @@ def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose
                 If `indexes` is a list, the result is a 3D array, but is
                 a 2D array if it is a band index number.
                                                                                  
-                        
-                    
             inputs:
                 path_to_files (string): File path to image. 
                 verbose (boolean): Used to print summary if needed
@@ -264,7 +269,6 @@ def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose
             outputs:
                 tile_array (np.array): returned array 
                 
-
         """
         tile_name = path_to_files.rsplit('/',1)[1].rsplit('.',1)[0]
         
@@ -286,7 +290,9 @@ def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose
                 print('meta data:\n',src.meta)
                 print('-'*4, 'tile summary' ,'-'*4)
                 
-            for top_row, bottom_row, left_col, right_col in __enumerate_tiles(src.meta['width'],src.meta['height'],maxWidth=maxWidth,maxHeight=maxHeight):
+            for top_row, bottom_row, left_col, right_col in __enumerate_tiles(
+                src.meta['width'], src.meta['height'],
+                maxWidth=maxWidth, maxHeight=maxHeight):
                 
                 tile_array = src.read(window = ((top_row,bottom_row),(left_col,right_col)))   #window reads y,x not as x,y
                 
@@ -321,7 +327,7 @@ def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose
 
 def __pad_raster(image:np.array,chipX:int,chipY:int,minScrapPercent:float,verbose:bool=False)-> np.array:
     """
-    Note:     This function is called w/in split_raster() with the goal of providing padding along the 
+    Note:     This function is called by split_raster() with the goal of providing padding along the 
                 right & bottom edge of the input image such that the final dimensions of the output image are
                 integer multiples of chip dimension chipX & chipY
                 
@@ -391,9 +397,9 @@ def split_raster(image_array:np.array,chipX:int,chipY:int,minScrapPercent:float,
             the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
                 
             if (Percent% of the original cells within a padded block) < minScrapPercent
-            the blocks along that edge will be 'cut' (ie "scrapped").
+            the blocks along that edge will be 'cut' (ie "cropped").
             
-            if minScrapPercent <= 0 then nothing will be scrapped
+            if minScrapPercent <= 0 then nothing will be cropped
            
            
     Inputs:        
@@ -546,6 +552,7 @@ def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_na
     profile['count'] = array.shape[0]                                               #band count
     profile['width'] = array.shape[2]                                               #xSize
     profile['height'] = array.shape[4]                                              #ySize
+    
     profile['photometric'] = 'RGB'
     
     print(f'updated raster meta data:\n{profile}') if verbose else None
@@ -561,7 +568,7 @@ def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_na
                                               verbose=False)        
         
         with rio.open(chip_path,'w+',**profile) as dst:                             #create file
-            left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out chip
+            #left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out chip
             dst.write(array[:,row_num,:,col_num,:])                                 #array[bands,xPosition,xSize,yPosition,ySize] 
             __make_worldfile(profile['transform'], chip_path,verbose)              #method for creating a world file. (a document that contains key affine info)
             

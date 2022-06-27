@@ -78,6 +78,7 @@ import numpy as np
 import cv2
 from raster2coco import Raster2Coco
 import pyproj
+from strawberry import scalar
 # The default configs, may be overridden
 import wget                                                                     #called within download_labels
 from zipfile import ZipFile                                                     #called within download_labels
@@ -85,6 +86,9 @@ from pathlib import Path, PurePath
 import rasterio as rio
 import geopandas as gpd
 import subprocess
+from PIL import Image
+from patchify import patchify
+from sklearn.preprocessing import MinMaxScaler
 
 # This is the default configuration of parameters for the pipeline
 config = {
@@ -100,9 +104,12 @@ config = {
     'colsSplitPerTile':20, # Expected columns per tile
     'chipDimX':256, # Chip dimension X
     'chipDimY':256, # Chip dimension Y
-    'tileDimX':5000, # Tile Dimension X
-    'tileDimY':5000, # Tile Dimension Y
+    'chipWindowStride': 192, # stride of the sliding window that patchifies the tile into chips
+    'inferenceTileDimX':5000, # Tile Dimension X
+    'inferenceTileDimY':5000, # Tile Dimension Y
     'mWH': '5000,5000', # maximum Width/Height of tiles: used in genImageChips
+    'trainingTileDimX':7000, # Tile Dimension X
+    'trainingTileDimY':7000, # Tile Dimension Y
     'file_extensions':'jpeg, jpg, jgw, png, pgw, tiff, tif, tfw', # image formats to consider when reading files
     'input_file_format': 'tif',
     'input_image_near_infrared':True,
@@ -116,7 +123,9 @@ config = {
     'trainingImageryRootPath':None, # the path to the tiles that will be used for model training
     'tileIndexPathFile':None,
     'featuresGeoJSONRootPathFile':None,
-    'buffer_value':int
+    'buffer_value':int,
+    'tile_geojson_target_crs': str, # the crs of the generated tile geojsons. 
+    'sidewalk_annotation_threshold':int
 }
 
 #----------------------------------------------------------------#
@@ -435,6 +444,25 @@ def genImgChips():
                            
     vbPrint(f"Number of files created in {chipsDir}: {len(chipFiles)}\n{'-'*4}Image Chips made successfully{'-'*4}")
 
+def _cropTiles(inputRootPath:str, outputRootPath:str, config:dict):
+
+    # Only JPEG tiles are cropped
+
+    input_image_pattern = '*.' + config['target_tile_file_format'].upper()
+    image_filepaths = find_files(inputRootPath, input_image_pattern)
+
+    chip_size = config['chipDimX']
+    for image_filepath  in image_filepaths:
+        if image_filepath.suffix == '.jpeg' or image_filepath.suffix == '.JPEG':
+            print('Cropping image ' + str(image_filepath))
+            image = cv2.imread(str(image_filepath), 1)  # Note that cv2 reads the image as BGR
+            size_x = (image.shape[1]//chip_size)*chip_size
+            size_y = (image.shape[0]//chip_size)*chip_size
+            image = Image.fromarray(image)
+            image = image.crop((0,0, size_x, size_y))
+            image = np.array(image)
+            output_image_filepath = os.path.join(outputRootPath,image_filepath.name)
+            cv2.imwrite(output_image_filepath, image)
 
 @__time_this  
 def genTrainingImgChips():
@@ -490,8 +518,11 @@ def genTrainingImgChips():
     imagery_tiles_filepath=[]
     imagery_tiles = []
     pattern = '*.'+config['input_file_format']
+    
     for root, dirs, files in os.walk(trainingImageryRootPath):
+
         for filename in fnmatch.filter(files, pattern):
+        
             imagery_tiles_filepath.append(os.path.join(root, filename))
             imagery_tiles.append(filename)
            
@@ -501,12 +532,16 @@ def genTrainingImgChips():
     if config['input_image_near_infrared']:
         input_image_near_infrared=True
 
-    # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
-    if not target_tile_file_format==source_tile_file_format:
-        convert_tiles(sourceIsNearInfrared=input_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=trainingImageryRootPath, targetDir=tilesDir)
+    # # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
+    # if not target_tile_file_format==source_tile_file_format:
+    #     convert_tiles(sourceIsNearInfrared=input_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=trainingImageryRootPath, targetDir=tilesDir)
 
-    # list of tiles converted to JPEG that need further split into chips. Only imagery that has a label tile is processed.
-    tilesFiles = __listdir(directory=labelTilesPath, extensions=target_tile_file_format)                             
+    # # crop image tiles so that they are divisible by the chip size - images are overwritten
+    # _cropTiles(inputRootPath=tilesDir, outputRootPath=tilesDir, config=config)
+
+
+    # list of tiles converted to JPEG (and potentially cropped) that need further split into chips. Only imagery that has a label tile is processed.
+    tilesFiles = __listdir(directory=labelTilesPath, extensions=target_tile_file_format) 
     
     # Loop over tiles
     for count, imageName in enumerate(tilesFiles):
@@ -543,7 +578,8 @@ def genTrainingImgChips():
                 minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
                 verbose = config['verbose']
             )
-        
+
+            
             # if we specify a tileset to save then save the tiles. 
             # otherwise if the source tiles are Tif, the tileset would already contain the required JPEG tiles 
             if ts is not None:
@@ -602,6 +638,7 @@ def genAnnotations():
     tvRatio = config['tvRatio']
 
     labelChipsDir = config['labelChipsDir']
+
     annDir = '%s/annotations_%s'%(project_root,ts)
 
     ## Making the dirs
@@ -626,10 +663,13 @@ def genAnnotations():
         vbPrint('Generating annotations for ' + train_or_val )
         dataR2C = Raster2Coco(data, labelChipsDir,  has_gt=True)
         dataJSON = dataR2C.createJSON()
+        dataJSON = dataR2C.genDirAnnotations(band_number=1)
         
         filepath = '%s/annotations_%s.json'%(annDir,train_or_val)
+
         with open(filepath, 'w') as outfile:
             json.dump(dataJSON, outfile)
+    
     # the chips under labelChipsDir need to be split into train and val
     elif (tvRatio > 0.0 or tvRatio < 1.0):
 
@@ -639,7 +679,7 @@ def genAnnotations():
         vbPrint('Dataset Size   : %i'%(len(labels)))
         labels = np.asarray(labels)
 
-        # permute the chips  
+        # permute the chips 
         np.random.shuffle(labels)
         
         # split
@@ -653,6 +693,7 @@ def genAnnotations():
         vbPrint('Generating annotations for the training data')
         trainR2C = Raster2Coco(trainData, labelChipsDir,  has_gt=True)
         trainJSON = trainR2C.createJSON()
+        trainJSON = trainR2C.genDirAnnotations()
 
         with open('%s/annotations_train.json'%(annDir), 'w') as outfile:
             json.dump(trainJSON, outfile)
@@ -663,6 +704,7 @@ def genAnnotations():
         vbPrint('Generating annotations for the validation data')
         valR2C = Raster2Coco(valData, labelChipsDir, has_gt=True)
         valJSON = valR2C.createJSON()
+        valJSON = valR2C.genDirAnnotations()
 
         with open('%s/annotations_val.json'%(annDir), 'w') as outfile:
             json.dump(valJSON, outfile)
@@ -723,7 +765,7 @@ def genImageInfo():
 #----------------------------------------------------------------#
 #--------- Model Evaluation and Verification Functions ----------#
 #----------------------------------------------------------------#
-def genEvalJSON():
+def genInferenceEvalJSON():
     """
     Uses shell commands to run the eval.py for the configured parameters of the pipeline
     This generates inferences in a JSON file saved in <project_root>/inferencesJSON_<ts>/
@@ -754,7 +796,7 @@ def genEvalJSON():
     os.system(shCmd)
     vbPrint('Completed')
 
-def genPredictJSON():
+def genInferencePredictJSON():
     """
     Uses shell commands to run the predict.py for the configured parameters of the pipeline
     This generates inferences in a JSON file saved in <project_root>/inferencesJSON_<ts>/
@@ -785,7 +827,7 @@ def genPredictJSON():
     os.system(shCmd)
     vbPrint('Predictions Completed')
 
-def genTileGeoJSON():
+def genInferenceTileGeoJSON():
     """
     genTileGeoJSON Summary:
         Generates up to 2 types of inference data from the inferences JSON output which is generated by genEvalJSON():
@@ -964,7 +1006,7 @@ def genTileGeoJSON():
                     infTile[(row)*chipShape[0]:((row+1)*chipShape[0])-cropShiftX, (col)*chipShape[1]:((col+1)*chipShape[1])-cropShiftY] = infChipMap[chipID][cropShiftX:,cropShiftY:]
             
             # Cropping image into the final tile dimension
-            infTile = infTile[:config['tileDimX'],:config['tileDimY']]
+            infTile = infTile[:config['inferenceTileDimX'],:config['inferenceTileDimY']]
 
             # Getting affine transform parameters from the world file
             tile_exists = exists(os.path.join(tilesDir,tile+'.JPEG'))
@@ -1066,7 +1108,7 @@ def genTileGeoJSON():
     else:
         vbPrint('Inference Data ran successfully. Nothing saved due to arguments passed.')
 
-def genTileGeoJSONs():
+def genTrainingTileGeoJSONs():
     """
     Partition the area features to per-tile features. Generates geoJSON per tile from a large geoJSON input features file that corresponds to a region (eg DVRPC) and a tile index geoJSON file that defines the extents of the tiles. 
 
@@ -1102,10 +1144,12 @@ def genTileGeoJSONs():
     
     tileindexRootPathFile = config['tileIndexPathFile']
     
-    target_crs = 'EPSG:6347'
+    tile_geojson_target_crs = config['tile_geojson_target_crs']
+    sidewalk_annotation_threshold = config['sidewalk_annotation_threshold']
 
     # Partition the whole area feature geoJSON to per-tile feature geoJSONs
-    geojson_tiles = _partitionGeoJSON(geoJSONRootPathFile, tileindexRootPathFile,tileFeoJSONsDir, target_crs=target_crs)
+    geojson_tiles = _partitionGeoJSON(geoJSONRootPathFile, tileindexRootPathFile,
+        tileFeoJSONsDir, target_crs=tile_geojson_target_crs, sidewalk_annotation_threshold=sidewalk_annotation_threshold)
 
     return geojson_tiles
 
@@ -1151,7 +1195,7 @@ def genLabelTiles():
 
     trainingImageryRootPath=config['trainingImageryRootPath']
     
-    target_crs = 'EPSG:6347'
+    target_label_raster_crs =  config['tile_geojson_target_crs']
 
     # Create label tiles 
     # First create a list of the imagery tiles that will act as template tiles https://rasterio.readthedocs.io/en/latest/cli.html?highlight=geojson#rasterize from 
@@ -1193,7 +1237,7 @@ def genLabelTiles():
         vector = vector.assign(height=dataset.height)
         vector = vector.assign(width=dataset.width)
 
-        vector = vector.set_crs(target_crs, allow_override=True)
+        vector = vector.set_crs(target_label_raster_crs, allow_override=True)
 
         # Buffer the features
         buffered_vector = vector.copy()
@@ -1208,10 +1252,12 @@ def genLabelTiles():
         # subprocess.run(['gdal_rasterize', '-ts', str(tile_dim_x), str(tile_dim_y), '-a_nodata', '0', '-burn', '255', '-co', 'COMPRESS=LZW', geojson_filepath, label_tile_filepath],
         #     env={'PROJ_LIB':'/opt/conda/envs/sidewalk-env/share/proj'})
 
-        subprocess.run(['gdal_rasterize', '-ts', str(vector['width'][0]), str(vector['height'][0]), '-te', str(dataset.bounds.left), str(dataset.bounds.bottom), str(dataset.bounds.right), str(dataset.bounds.top), '-burn', '1', '-co', 'COMPRESS=LZW', geojson_filepath, label_tile_filepath],
-            env={'PROJ_LIB':'/opt/conda/envs/sidewalk-env/share/proj'})
+        ## Example command line gdal_rasterize -ts 7000 7000 -te 520799.99991914 4420500.00002059 522899.99991914 4422600.00002059 -burn 255 /data/pipeline-runs/project_root4/tileGeoJSONs_ts4/UTM_X59_Y56.geojson /data/pipeline-runs/project_root4/labelTiles_ts4/UTM_X59_Y56.tif
 
-
+        subprocess.run(['gdal_rasterize', '-ts', str(vector['width'][0]), str(vector['height'][0]), '-te', 
+            str(dataset.bounds.left), str(dataset.bounds.bottom), str(dataset.bounds.right), str(dataset.bounds.top), 
+            '-burn', '255', '-co', 'COMPRESS=LZW', geojson_filepath, label_tile_filepath],
+            env={'PROJ_LIB':'/opt/conda/envs/sidewalk-env/lib/python3.7/site-packages/pyproj/proj_dir/share/proj'})
        
 
 @__time_this  
@@ -1243,7 +1289,7 @@ def genLabelChips():
     ts = config['ts']                                                           #optional tileset (subfolder). Default is None, which means no tiles will be saved.
     
     window = __getWindow(
-        window_config=str(config['tileDimX']) + ',' + str(config['tileDimY'])
+        window_config=str(config['trainingTileDimX']) + ',' + str(config['trainingTileDimY'])
     )                           #dictonary w/ max window dimensions (for training with DVRPC data its width:7000,height:7000) 
     
     file_formats = config['file_extensions'].replace(' ','').split(',')                    #convert string of file formats to list of formats
@@ -1257,62 +1303,142 @@ def genLabelChips():
     __make_folders(rootfolder=project_root,                                               ##Make folder to hold chips
                    subfolder=chipsDir)                                        #method for making project rootfolder/subfolders
     
+    chipDimX = config['chipDimX']
+    chipDimY = config['chipDimY']
+    chipWindowStride = config['chipWindowStride']
+
+    sidewalk_annotation_threshold = config['sidewalk_annotation_threshold']
     
     # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
-    if not target_tile_file_format==source_tile_file_format:
-        convert_tiles(sourceIsNearInfrared=False, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=labelTilesDir, targetDir=labelTilesDir)
+    # if not target_tile_file_format==source_tile_file_format:
+    #     convert_tiles(sourceIsNearInfrared=False, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=labelTilesDir, targetDir=labelTilesDir)
+
+    # crop label tiles such that they are divisible by the chip size
+    # _cropTiles(inputRootPath=labelTilesDir, outputRootPath=labelTilesDir, config=config)
+
 
     # list of tiles converted to JPEG that need further split into chips
-    tilesFiles = __listdir(directory=labelTilesDir, extensions=target_tile_file_format)                             
+    label_tile_filenames = __listdir(directory=labelTilesDir, extensions=target_tile_file_format)  
+    label_tile_filenames = np.array(label_tile_filenames)
     
+    # to scale the label chip
+    # min_max_scaler = MinMaxScaler()
+    
+    raster_coco = Raster2Coco(label_tile_filenames, chipsDir,  has_gt=True)
+    labelCOCOJSON = raster_coco.createJSON()
+
+    annotation_index = 1
+
+    annDir = '%s/annotations_%s'%(project_root,ts)
+
+    ## Making the dirs
+    if(os.path.isdir(annDir)):
+        vbPrint('Found dir: %s'%(annDir))
+    else:
+        vbPrint('Making dir: %s'%(annDir))
+        os.mkdir(annDir)
+
+    #train_or_val = Path(labelChipsDir).name
+    
+
     # Loop over tiles
-    for count,imageName in enumerate(tilesFiles):
-        image_path = fr'{labelTilesDir}/{imageName}'                                #recreate image path 
-        vbPrint(f'Current Image Path: {image_path}')
+    chip_index = 0
+    for tile_filename in label_tile_filenames:
+        print('Annotating tile ', tile_filename)
+
+        tile_filepath = Path(os.path.join(labelTilesDir), tile_filename )
         
         #Open raster files & apply window to generate chips 
-        for tile_array, tile_meta, tile_name in open_raster(
-            path_to_files = image_path,      #current tile
-            maxWidth = window['width'],       #this is maxWidth/maxHeight
-            maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
-            verbose = config['verbose']):
+        # for tile_array, tile_meta, tile_name in open_raster(
+        #     path_to_files = image_path,      #current tile
+        #     maxWidth = window['width'],       #this is maxWidth/maxHeight
+        #     maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
+        #     verbose = config['verbose']):
                                                              
-            if 0 in tile_array.shape:
-                vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
-                continue
-            
-            ## Creation of Label chips
-            split_array = split_raster(
-                image_array=tile_array,                        #current tile to split into chips
-                chipX = 256,                            #chip width
-                chipY = 256,                            #chip height
-                minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
-                verbose = config['verbose']
-            )
+        #     if 0 in tile_array.shape:
+        #         vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
+        #         continue
+
+         # ## Creation of Label chips
+            # split_array = split_raster(
+            #     image_array=tile_array,                        #current tile to split into chips
+            #     chipX = chipDimX,                            #chip width
+            #     chipY = chipDimY,                            #chip height
+            #     minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
+            #     verbose = config['verbose']
+            # )
         
             # if we specify a tileset to save then save the tiles. 
             # otherwise if the source tiles are Tif, the tileset would already contain the required JPEG tiles 
-            if ts is not None:
-                save_tile(
-                    array=tile_array,              #tile array
-                    save_directory=labelTilesDir,        #folder location to save tile in 
-                    tile_name=tile_name,            #chips will be named as: region_tile_{tileXpos}_{tileYpos}
-                    profile = tile_meta,                 #rasterio requires a 'profile'(meta data) to create/write files
-                    save_fmt = target_tile_file_format,   #format to save tiles as (ex: png,jpeg,geoTiff) 
-                    verbose = config['verbose']
-                )
+            # if ts is not None:
+            #     save_tile(
+            #         array=tile_array,              #tile array
+            #         save_directory=labelTilesDir,        #folder location to save tile in 
+            #         tile_name=tile_name,            #chips will be named as: region_tile_{tileXpos}_{tileYpos}
+            #         profile = tile_meta,                 #rasterio requires a 'profile'(meta data) to create/write files
+            #         save_fmt = target_tile_file_format,   #format to save tiles as (ex: png,jpeg,geoTiff) 
+            #         verbose = config['verbose']
+            #     )
             
             ## Save the Label Chips
-            save_chips(
-                array=split_array,                                     #split tile containing chips
-                save_directory=chipsDir,                             #folder location to save chips in 
-                tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
-                profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
-                chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
-                verbose = config['verbose']
-            )
-
+            # save_chips(
+            #     array=split_array,                                     #split tile containing chips
+            #     save_directory=chipsDir,                             #folder location to save chips in 
+            #     tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
+            #     profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
+            #     chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
+            #     verbose = config['verbose']
+            # )
     
+        
+        # keep the chips of a single tile in memory 
+        label_chips=[]
+
+        if tile_filepath.suffix == '.JPEG':
+            
+            # open file and use cv2 to create a black and white image as we dont need the three channels. 
+            # Please note that in semantic segmentation in general we may have more than two classes (sidewalk and background) 
+            # and in that case we would not convert to black and white the label tiles. 
+            label_tile = cv2.imread(str(tile_filepath),1)
+            label_tile = cv2.cvtColor(label_tile, cv2.COLOR_BGR2GRAY)
+            (thresh, label_tile) = cv2.threshold(label_tile, 127, 255, cv2.THRESH_BINARY) # returned thresh is not used
+
+            # split the tile into chips 
+            label_tile = label_tile.reshape(label_tile.shape[0], label_tile.shape[1], 1)
+            label_chips_array = patchify(label_tile, (chipDimY, chipDimY, 1),  step=chipWindowStride)
+
+            for i in range(label_chips_array.shape[0]):
+                for j in range(label_chips_array.shape[1]):
+                    
+                    chip_index += 1
+
+                    label_chip_array = label_chips_array[i, j, :, :]
+
+                    # scaled_label_chip_array = min_max_scaler.fit_transform(label_chip_array.reshape(-1, label_chip_array.shape[-1])).reshape(label_chip_array.shape)
+
+                    label_chip_array = label_chip_array[0] #Drop the extra unecessary dimension that patchify adds.                               
+                    label_chips.append(label_chip_array)
+
+                    filename = tile_filepath.stem + '_' + str(i) + '_' + str(j) + str(tile_filepath.suffix) 
+                    annotation_index  += 10000 * chip_index
+
+                    raster_coco.genImgJSON(np.squeeze(label_chip_array), filename, 
+                        chip_index, band_no=1, 
+                        annotation_idx=annotation_index, 
+                        annotation_threshold=sidewalk_annotation_threshold)
+        
+        # For testing on few tiles only
+        # if  tile_filepath.name == 'UTM_X24_Y72.JPEG':
+        #     break
+        # label_chips_array = np.array(label_chips)
+
+    #filepath = '%s/annotations_%s.json'%(annDir, train_or_val)
+    annotation_filepath = '%s/annotations.json'%(annDir)
+
+    with open(annotation_filepath, 'w') as outfile:
+        json.dump(labelCOCOJSON, outfile)
+    #label_tiles_array = np.array(label_tiles)
+
     # Summary
     if ts is not None:
         # tileFiles = __listdir(directory=tilesDir,
