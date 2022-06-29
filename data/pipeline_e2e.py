@@ -89,6 +89,7 @@ import subprocess
 from PIL import Image
 from patchify import patchify
 from sklearn.preprocessing import MinMaxScaler
+from shutil import copy2
 
 # This is the default configuration of parameters for the pipeline
 config = {
@@ -501,24 +502,41 @@ def genTrainingImgChips():
     # The path to imagery 
     trainingImageryRootPath = config['trainingImageryRootPath']                               
 
-    # We need to consult the labelTiles dir as not all imagery was converted to labelTiles - images that didnt have any features annotations were ignored.  
+    # We need to consult the labelTiles dir as not all imagery was converted to labelTiles - 
+    # images that didnt have any features annotations were ignored.  
     labelTilesPath = '%s/labelTiles_%s'%(project_root,ts)
-    labelTileFiles = __listdir(directory=labelTilesPath, extensions=file_formats)                             #list of files to convert to chips
+    labelTileFiles = __listdir(directory=labelTilesPath, extensions=file_formats)                            
     
     # The image tiles in the desired format and CRS 
-    tilesDir = '%s/imageTiles_%s'%(project_root,ts)
-    __make_folders(rootfolder=project_root,
-                    subfolder=tilesDir)    
+    imageTilesDir = '%s/imageTiles_%s'%(project_root,ts)
+    __make_folders(rootfolder=project_root, subfolder=imageTilesDir)    
+    
+    # Annotations dir - is required as we need the exact split of train and val tiles
+    annotationsDir = '%s/annotations_%s'%(project_root,ts)
     
     # The image chips
     chipsDir = '%s/imageChips_%s'%(project_root,ts)                                   
     __make_folders(rootfolder=project_root,                                               ##Make folder to hold chips
-                   subfolder=chipsDir)                                        #method for making project rootfolder/subfolders
+                   subfolder=chipsDir)                                        
+    
+    __make_folders(rootfolder=project_root,                                               ##Make folder to hold train chips
+                   subfolder=os.path.join(chipsDir, 'train'))                                        #method for making project rootfolder/subfolders
+    
+    __make_folders(rootfolder=project_root,                                               ##Make folder to hold val chips
+                   subfolder=os.path.join(chipsDir, 'val'))                                        #method for making project rootfolder/subfolders
+    
+    chipDimX = config['chipDimX']
+    chipDimY = config['chipDimY']
+    chipWindowStride = config['chipWindowStride']
+
+    # the scaler of the image chips - see chip loop
+    min_max_scaler = MinMaxScaler()
     
     imagery_tiles_filepath=[]
     imagery_tiles = []
     pattern = '*.'+config['input_file_format']
-    
+    input_image_near_infrared = config['input_image_near_infrared']
+
     for root, dirs, files in os.walk(trainingImageryRootPath):
 
         for filename in fnmatch.filter(files, pattern):
@@ -526,26 +544,23 @@ def genTrainingImgChips():
             imagery_tiles_filepath.append(os.path.join(root, filename))
             imagery_tiles.append(filename)
            
-    print('Number of imagery  tiles', len(imagery_tiles))
+    print('Total number of imagery  tiles', len(imagery_tiles))
 
-    # if the tile has 4 bands with band 4 being the Near Infra Red (NIR) band the  say so
-    if config['input_image_near_infrared']:
-        input_image_near_infrared=True
+    # out of the total number of tiles we will only use those that have training and validation label tiles
+    train_val_split_dict = np.load(os.path.join(annotationsDir, 'train_val_split_dict.npy'), allow_pickle=True)
+    tile_filenames_array_train = train_val_split_dict[()]['tiles_train']
+    tile_filenames_array_val = train_val_split_dict[()]['tiles_val']
 
-    # # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
-    # if not target_tile_file_format==source_tile_file_format:
-    #     convert_tiles(sourceIsNearInfrared=input_image_near_infrared, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=trainingImageryRootPath, targetDir=tilesDir)
-
-    # # crop image tiles so that they are divisible by the chip size - images are overwritten
-    # _cropTiles(inputRootPath=tilesDir, outputRootPath=tilesDir, config=config)
-
-
-    # list of tiles converted to JPEG (and potentially cropped) that need further split into chips. Only imagery that has a label tile is processed.
-    tilesFiles = __listdir(directory=labelTilesPath, extensions=target_tile_file_format) 
     
-    # Loop over tiles
-    for count, imageName in enumerate(tilesFiles):
+    # list of tiles converted to JPEG (and potentially cropped) that need further split into chips. 
+    # Only imagery that has a label tile is processed. Therefore we need a list of label tiles.
+    labelTileFiles = __listdir(directory=labelTilesPath, extensions=target_tile_file_format) 
+    print('Total number of imagery  tiles that we train the model on', len(labelTileFiles))
+    
+    # Loop over all label tiles
+    for imageName in labelTileFiles:
 
+        # find corresponding image tile
         basename_without_ext = os.path.splitext(os.path.basename(imageName))[0]
         filename = basename_without_ext+ '.' + config['input_file_format']
         print(filename)
@@ -556,58 +571,100 @@ def genTrainingImgChips():
         
         corresponding_imagery_tile_file_path = imagery_tiles_filepath[index]
 
+        vbPrint(f'Imagery File Path: {corresponding_imagery_tile_file_path}')
         
-        vbPrint(f'Current Image Path: {corresponding_imagery_tile_file_path}')
+        # copy the imagery files that have labels to the imageTiles dir. 
+        copy2(corresponding_imagery_tile_file_path, imageTilesDir)
+
+    # #Process and Open raster files & apply window to generate chips 
+    # for tile_array, tile_meta, tile_name in open_raster(
+    #     path_to_files = corresponding_imagery_tile_file_path,      #current tile
+    #     maxWidth = window['width'],       #this is maxWidth/maxHeight
+    #     maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
+    #     verbose = config['verbose']):
+
+    #     # save tile takes as input the 4 band TIFF tile and converts into into a 3-band JPEG with NIR-
+    #     save_tile(
+    #         array=tile_array,           
+    #         save_directory=imageTilesDir,      
+    #         tile_name=tile_name,          
+    #         profile = tile_meta,                 #rasterio requires a 'profile'(meta data) to create/write files
+    #         save_fmt = target_tile_file_format,   #format to save tiles as (ex: png,jpeg,geoTiff) 
+    #         verbose = config['verbose']
+    #     )
+    
+    # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
+    # if not target_tile_file_format==source_tile_file_format:
+    convert_tiles(sourceIsNearInfrared=input_image_near_infrared, sourceTileFormat=source_tile_file_format, 
+        targetTileFormat=target_tile_file_format, 
+        sourceDir=imageTilesDir, targetDir=imageTilesDir)
+
+    # crop label tiles such that they are divisible by the chip size
+    _cropTiles(inputRootPath=imageTilesDir, outputRootPath=imageTilesDir, config=config)
+
+    # array of tiles that need further split into chips
+    image_tile_filenames = __listdir(directory=imageTilesDir, extensions=target_tile_file_format)  
+    image_tile_filenames = np.array(image_tile_filenames)
+
+    # Process the imageTiles
+    for image_tile in image_tile_filenames:
+
+        # ## Creation of Image chips
+        # split_array = split_raster(
+        #     image_array=tile_array,                        #current tile to split into chips
+        #     chipX = 256,                            #chip width
+        #     chipY = 256,                            #chip height
+        #     minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
+        #     verbose = config['verbose']
+        # )
+
+        # split the tile into chips
+        tile_array = tile_array.reshape(tile_array.shape[0], tile_array.shape[1], 1)
+        image_chips_array = patchify(tile_array, (chipDimX, chipDimY, 1),  step=chipWindowStride)
         
-        #Open raster files & apply window to generate chips 
-        for tile_array, tile_meta, tile_name in open_raster(
-            path_to_files = corresponding_imagery_tile_file_path,      #current tile
-            maxWidth = window['width'],       #this is maxWidth/maxHeight
-            maxHeight = window['height'],        #actual height/width may be less since no padding happens when opening
-            verbose = config['verbose']):
-                                                             
-            if 0 in tile_array.shape:
-                vbPrint(f'empty array generated: {tile_array.shape}. Skipping')
-                continue
+        for i in range(image_chips_array.shape[0]):
+            for j in range(image_chips_array.shape[1]):
             
-            ## Creation of Image chips
-            split_array = split_raster(
-                image_array=tile_array,                        #current tile to split into chips
-                chipX = 256,                            #chip width
-                chipY = 256,                            #chip height
-                minScrapPercent = 0,                     #0 means every tile_array will be padded before splitting (otherwise chips along bot/right edges are discarded)
-                verbose = config['verbose']
-            )
+                chip_filename = tile_name.stem + '_' + str(i) + '_' + str(j) + str(tile_name.suffix) 
 
-            
-            # if we specify a tileset to save then save the tiles. 
-            # otherwise if the source tiles are Tif, the tileset would already contain the required JPEG tiles 
-            if ts is not None:
-                save_tile(
-                    array=tile_array,              #tile array
-                    save_directory=tilesDir,        #folder location to save tile in 
-                    tile_name=tile_name,            #chips will be named as: region_tile_{tileXpos}_{tileYpos}
-                    profile = tile_meta,                 #rasterio requires a 'profile'(meta data) to create/write files
-                    save_fmt = target_tile_file_format,   #format to save tiles as (ex: png,jpeg,geoTiff) 
-                    verbose = config['verbose']
-                )
-            
-            ## Save the Image Chips
-            save_chips(
-                array=split_array,                                     #split tile containing chips
-                save_directory=chipsDir,                             #folder location to save chips in 
-                tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
-                profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
-                chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
-                verbose = config['verbose']
-            )
+                image_chip_array = image_chips_array[i, j, :, :]
 
+                scaled_image_chip_array = min_max_scaler.fit_transform(image_chip_array.reshape(-1, image_chip_array.shape[-1])).reshape(image_chip_array.shape)
+
+                image_chip_array = scaled_image_chip_array[0] #Drop the extra unecessary dimension that patchify adds.                               
+
+                if saved_tile_filename in tile_filenames_array_train:
+
+                    save_chips(
+                        array=image_chip_array,                                     #split tile containing chips
+                        save_directory = os.path.join(chipsDir, 'train'),                             #folder location to save chips in 
+                        tile_name=chip_filename,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
+                        profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
+                        chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
+                        verbose = config['verbose']
+                    )
+                
+                elif saved_tile_filename in tile_filenames_array_val:
+
+                    save_chips(
+                        array=image_chip_array,                                     #split tile containing chips
+                        save_directory = os.path.join(chipsDir, 'val'),                             #folder location to save chips in 
+                        tile_name=tile_name,                                   #chips will be named as: tileName_tileXpos_tileYpos_chipXpos_chipYpos
+                        profile = tile_meta,                                   #rasterio requires a 'profile'(meta data) to create/write files
+                        chip_file_format = chip_file_format,                                   #format to save chips as (ex: png,jpeg,tiff) 
+                        verbose = config['verbose']
+                    )
+                else:
+                    print('Error: Tile filename is in neither train or validation datasets')
+                    break
+
+        
     
     # Summary
     if ts is not None:
-        tileFiles = __listdir(directory=tilesDir,
+        tileFiles = __listdir(directory=imageTilesDir,
                               extensions=['all']) 
-        vbPrint(f"Number of files created in {tilesDir}: {len(tileFiles)}\n{'-'*4}Image Tiles made successfully{'-'*4}")
+        vbPrint(f"Number of files created in {imageTilesDir}: {len(tileFiles)}\n{'-'*4}Image Tiles made successfully{'-'*4}")
         
         
     chipFiles = __listdir(directory=chipsDir,
@@ -1288,14 +1345,14 @@ def genLabelChips():
     fs = config['fs']           
     ts = config['ts']                                                           #optional tileset (subfolder). Default is None, which means no tiles will be saved.
     
-    window = __getWindow(
-        window_config=str(config['trainingTileDimX']) + ',' + str(config['trainingTileDimY'])
-    )                           #dictonary w/ max window dimensions (for training with DVRPC data its width:7000,height:7000) 
+    # window = __getWindow(
+    #     window_config=str(config['trainingTileDimX']) + ',' + str(config['trainingTileDimY'])
+    # )                           #dictonary w/ max window dimensions (for training with DVRPC data its width:7000,height:7000) 
     
-    file_formats = config['file_extensions'].replace(' ','').split(',')                    #convert string of file formats to list of formats
-    source_tile_file_format = config['source_tile_file_format']                                                   #file format for tiles
+    #file_formats = config['file_extensions'].replace(' ','').split(',')                    #convert string of file formats to list of formats
+    #source_tile_file_format = config['source_tile_file_format']                                                   #file format for tiles
     target_tile_file_format = config['target_tile_file_format']                                                   #file format for tiles
-    chip_file_format = config['chip_file_format']                                                   #file format for chips when they are saved. (png,jpeg,tif) https://gdal.org/drivers/raster/index.html
+    #chip_file_format = config['chip_file_format']                                                   #file format for chips when they are saved. (png,jpeg,tif) https://gdal.org/drivers/raster/index.html
     
     labelTilesDir = '%s/labelTiles_%s'%(project_root,ts)                                           #directory with files to convert to chips 
                             
@@ -1309,9 +1366,13 @@ def genLabelChips():
 
     sidewalk_annotation_threshold = config['sidewalk_annotation_threshold']
     
+    # We support the case where both train and val label chips are in one directory and they need to be split. 
+    # The train to validation ratio controls the split. If tvRatio is 1.0 then either train or validation annotations are produced.
+    tvRatio = config['tvRatio']
+
     # If the tile is in GeoTIFF format, then convert to 8-bit JPEG 
     # if not target_tile_file_format==source_tile_file_format:
-    #     convert_tiles(sourceIsNearInfrared=False, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=labelTilesDir, targetDir=labelTilesDir)
+    # convert_tiles(sourceIsNearInfrared=False, sourceTileFormat=source_tile_file_format, targetTileFormat=target_tile_file_format, sourceDir=labelTilesDir, targetDir=labelTilesDir)
 
     # crop label tiles such that they are divisible by the chip size
     # _cropTiles(inputRootPath=labelTilesDir, outputRootPath=labelTilesDir, config=config)
@@ -1321,11 +1382,23 @@ def genLabelChips():
     label_tile_filenames = __listdir(directory=labelTilesDir, extensions=target_tile_file_format)  
     label_tile_filenames = np.array(label_tile_filenames)
     
-    # to scale the label chip
-    # min_max_scaler = MinMaxScaler()
     
-    raster_coco = Raster2Coco(label_tile_filenames, chipsDir,  has_gt=True)
-    labelCOCOJSON = raster_coco.createJSON()
+    # split the tiles into train and validation
+    # permute the tiles. We use the seed `1000` to 
+    # make sure that the same tiles are used in train and val subsets across
+    # executions of this function. 
+    np.random.seed(1000)
+    np.random.shuffle(label_tile_filenames)
+
+    # split
+    splitIdx = int(label_tile_filenames.shape[0]*tvRatio)
+    label_tile_filenames_train, label_tile_filenames_val = np.split(label_tile_filenames,[splitIdx])
+
+    raster_coco_train = Raster2Coco(label_tile_filenames_train, chipsDir,  has_gt=True)
+    labelCOCOJSON_train = raster_coco_train.createJSON()
+
+    raster_coco_val = Raster2Coco(label_tile_filenames_val, chipsDir,  has_gt=True)
+    labelCOCOJSON_val = raster_coco_val.createJSON()
 
     annotation_index = 1
 
@@ -1338,13 +1411,21 @@ def genLabelChips():
         vbPrint('Making dir: %s'%(annDir))
         os.mkdir(annDir)
 
-    #train_or_val = Path(labelChipsDir).name
-    
+    # save the train and val tiles as these will be used in the generation of image chips
+    train_val_split_dict   = {
+        'tiles_train': label_tile_filenames_train,
+        'tiles_val': label_tile_filenames_val
+    }
+    np.save(os.path.join(annDir, 'train_val_split_dict.npy'), train_val_split_dict)
 
-    # Loop over tiles
+    # Loop over all tiles
     chip_index = 0
     for tile_filename in label_tile_filenames:
-        print('Annotating tile ', tile_filename)
+
+        if tile_filename in label_tile_filenames_train:
+            print('Annotating training tile ', tile_filename)
+        else:
+            print('Annotating validation tile ', tile_filename)
 
         tile_filepath = Path(os.path.join(labelTilesDir), tile_filename )
         
@@ -1405,7 +1486,7 @@ def genLabelChips():
 
             # split the tile into chips 
             label_tile = label_tile.reshape(label_tile.shape[0], label_tile.shape[1], 1)
-            label_chips_array = patchify(label_tile, (chipDimY, chipDimY, 1),  step=chipWindowStride)
+            label_chips_array = patchify(label_tile, (chipDimX, chipDimY, 1),  step=chipWindowStride)
 
             for i in range(label_chips_array.shape[0]):
                 for j in range(label_chips_array.shape[1]):
@@ -1422,21 +1503,33 @@ def genLabelChips():
                     filename = tile_filepath.stem + '_' + str(i) + '_' + str(j) + str(tile_filepath.suffix) 
                     annotation_index  += 10000 * chip_index
 
-                    raster_coco.genImgJSON(np.squeeze(label_chip_array), filename, 
-                        chip_index, band_no=1, 
-                        annotation_idx=annotation_index, 
-                        annotation_threshold=sidewalk_annotation_threshold)
-        
+                    if tile_filename in label_tile_filenames_train:
+                        raster_coco_train.genImgJSON(np.squeeze(label_chip_array), filename, 
+                            chip_index, band_no=1, 
+                            annotation_idx=annotation_index, 
+                            annotation_threshold=sidewalk_annotation_threshold)
+                    elif tile_filename in label_tile_filenames_val:
+                        raster_coco_val.genImgJSON(np.squeeze(label_chip_array), filename, 
+                            chip_index, band_no=1, 
+                            annotation_idx=annotation_index, 
+                            annotation_threshold=sidewalk_annotation_threshold)
+                    else:
+                        print('Error: Tile File name is in neither train or validation datasets')
+                        break
+
         # For testing on few tiles only
-        # if  tile_filepath.name == 'UTM_X24_Y72.JPEG':
-        #     break
-        # label_chips_array = np.array(label_chips)
+        
 
     #filepath = '%s/annotations_%s.json'%(annDir, train_or_val)
-    annotation_filepath = '%s/annotations.json'%(annDir)
+    annotation_filepath_train = '%s/annotations_train.json'%(annDir)
+    annotation_filepath_val = '%s/annotations_val.json'%(annDir)
 
-    with open(annotation_filepath, 'w') as outfile:
-        json.dump(labelCOCOJSON, outfile)
+    with open(annotation_filepath_train, 'w') as outfile:
+        json.dump(labelCOCOJSON_train, outfile)
+    
+    with open(annotation_filepath_val, 'w') as outfile:
+        json.dump(labelCOCOJSON_val, outfile)
+
     #label_tiles_array = np.array(label_tiles)
 
     # Summary
