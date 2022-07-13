@@ -60,6 +60,8 @@ from pathlib import Path
 import shutil
 from os import makedirs, walk, listdir
 import subprocess
+from patchify import patchify
+import os
 
 def __init__():
     pass
@@ -249,7 +251,7 @@ def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFor
             shutil.copy(input_path_filename.as_posix(), output_world_path_filename.parent + new_output_world_filename)
 
             
-def open_raster(path_to_files:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
+def open_raster(path_to_files:str,maxWidth:int, maxHeight:int, verbose:bool=False)-> np.array:
 
         """
             Converts / reads the data into a numpy array,
@@ -574,6 +576,82 @@ def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_na
             
         
     print(f'Save Completed to {path_to_save}\n') if verbose else None
+    
+    
+def save_training_chips(image_tile_array:np.array, image_tile_meta:dict, image_tile_filename:str, 
+            save_path:str,  scaler, chip_size_x:int, chip_size_y:int, chip_window_stride:int, verbose:bool=False)->None: 
+    
+    """
+    Notes:
+        Method for saving image chip does not currently update affine transform the upper left pixel location will have to be worked out for each chip
+              
+    Inputs:
+        array (np.array): chip array 
+        save_directory (str): name of subfolder that will hold chips 
+        chip_file_format (str): file type for image chips. ex JPEG/PNG etc
+        tile_name (str):  naming convention '{world_name}_tile_{left_col}_{top_row}'
+        profile (dict): tile_meta
+        
+    
+    References:      
+        Image profiles: https://rasterio.readthedocs.io/en/latest/topics/profiles.html
+        Supported drivers: https://gdal.org/drivers/raster/index.html
+        Saving Images: https://rasterio.readthedocs.io/en/latest/topics/writing.html           
+    """    
+    
+    tile_affine = image_tile_meta['transform']
+
+    image_chip_meta={}
+    if image_tile_filename.endswith('jpg') or image_tile_filename.endswith('JPEG'):
+        image_chip_meta['driver'] = 'JPEG'
+    elif image_tile_filename.endswith('tiff') or image_tile_filename.endswith('tif'):
+        image_chip_meta['driver'] = 'GTiff'
+    
+    # split the tile into chips
+    image_chips_array = patchify(image_tile_array, (3, chip_size_x, chip_size_y),  step=chip_window_stride)
+    
+    #Drop the extra unecessary dimension that patchify adds.                               
+    image_chips_array = image_chips_array[0] 
+            
+    # Iterate over the chips and write to disk the images and their world files
+    for i in range(image_chips_array.shape[0]):
+        for j in range(image_chips_array.shape[1]):
+
+            chip_filename = image_tile_filename.split('.')[0] + '_' + str(i) + '_' + str(j) + '.' + image_tile_filename.split('.')[1] 
+
+            image_chip_array = image_chips_array[j, i, :, :, :]
+
+            # # scale the image - note that the bit width of training data must match the bit width 
+            # # assumed by the backbone network. In the case where imagery is in uint16, the network floating point 
+            # resolution must be compatible to that.  
+            # scaled_image_chip_array = scaler.fit_transform(image_chip_array.reshape(-1, 3)).reshape(image_chip_array.shape)
+
+            # scaled_image_chip_array *= 255
+
+            image_chip_meta['dtype'] = image_tile_meta['dtype']
+            image_chip_meta['count'] = image_chip_array.shape[0]                                               #band count
+            image_chip_meta['width'] = image_chip_array.shape[1]                                               #xSize
+            image_chip_meta['height'] = image_chip_array.shape[2]                                              #ySize
+            image_chip_meta['photometric'] = 'RGB'
+            
+            left_col = i*chip_window_stride
+            top_row = j*chip_window_stride
+            
+            image_chip_meta['transform'] = __newTransform(
+                oldtransform= tile_affine,  
+                xy={'cols':left_col,'rows':top_row},
+                verbose=False
+            )        
+            
+            chip_filepath = os.path.join(save_path, chip_filename)
+
+            with rio.open(chip_filepath,'w+',**image_chip_meta) as dst:                             #create file
+                #left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out chip
+                dst.write(image_chip_array)                                 #array[bands,xPosition,xSize,yPosition,ySize] 
+                __make_worldfile(image_chip_meta['transform'], chip_filepath,verbose)              #method for creating a world file. (a document that contains key affine info)
+                
+                
+    print(f'Chips saved  to {save_path} for tile {image_tile_filename} \n') if verbose else None
     
     
     
