@@ -90,6 +90,7 @@ from PIL import Image
 from patchify import patchify
 from sklearn.preprocessing import MinMaxScaler
 from shutil import copy2
+from click.testing import CliRunner
 
 # This is the default configuration of parameters for the pipeline
 config = {
@@ -466,6 +467,7 @@ def _cropTiles(inputRootPath:str, outputRootPath:str, config:dict):
             output_image_filepath = os.path.join(outputRootPath,image_filepath.name)
             cv2.imwrite(output_image_filepath, image)
 
+
 @__time_this  
 def genTrainingImgChips():
     """
@@ -638,7 +640,7 @@ def genTrainingImgChips():
 
     # vbPrint(f"Number of chips created in {chipsDir}: {len(chipFiles)}\n{'-'*4}Image Chips made successfully{'-'*4}")
 
-
+@__time_this  
 def genAnnotations():
     """
     Generates the train and val annotations files using the image and label chips
@@ -737,7 +739,7 @@ def genAnnotations():
 
     vbPrint('Annotations made and saved successfully')
 
-
+@__time_this  
 def genImgChipsInfo():
     """
     Generates the COCO-test dataset compatible image info files
@@ -850,6 +852,7 @@ def genInferencePredictJSON():
     os.system(shCmd)
     vbPrint('Predictions Completed')
 
+@__time_this  
 def genInferenceTileGeoJSON():
     """
     genTileGeoJSON Summary:
@@ -1135,8 +1138,10 @@ def genInferenceTileGeoJSON():
     # the created SHP inherits the same CRS
     gdf.to_file(_shp_pathfile, crs="EPSG:6527")
     
+    runner = CliRunner()
     with open(_shp_pathfile,'r') as shpf:
-        _centerline(_shp_pathfile, geoJSONCenterlinesPathFile)
+        print("Creating centerlines for the sharded tile", _shp_pathfile)
+        _centerline(runner, _shp_pathfile, geoJSONCenterlinesPathFile)
     shpf.close()
 
     if(genGeoJSON and genImgs):
@@ -1196,6 +1201,7 @@ def genTrainingTileGeoJSONs():
 
     return geojson_tiles
 
+@__time_this  
 def genLabelTiles():
     """
     Generates one label tile from each per-tile geoJSON input file

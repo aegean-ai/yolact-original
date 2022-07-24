@@ -9,7 +9,7 @@ import fnmatch
 import geopandas as gpd
 import shapely
 
-from click.testing import CliRunner
+
 
 from centerline.converters import create_centerlines, get_ogr_driver
 from centerline.exceptions import UnsupportedVectorType
@@ -123,9 +123,8 @@ def _partitionGeoJSON(geoJSONrootPath:str, tileindexRootPath:str,
         
     return tiles
 
-def _centerline(polygon_geojson_pathfile, line_geojson_pathfile):
+def _centerline(runner, polygon_geojson_pathfile, line_geojson_pathfile):
     
-    runner = CliRunner()
     runner.invoke(
         create_centerlines, [polygon_geojson_pathfile, line_geojson_pathfile]
     )
