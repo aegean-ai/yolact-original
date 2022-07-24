@@ -1,14 +1,21 @@
 name: sidewalk-env
 prefix: /opt/conda/envs/sidewalk-env
 channels:
+  - pytorch 
   - conda-forge
-  - defaults
+  # We want to have a reproducible setup, so we don't want default channels,
+  # which may be different for different users. All required channels should
+  # be listed explicitly here.
+  - nodefaults
 dependencies:
+  # - python 3.7.*
   - pip
-  - proj
-  - unzip
+ # - poetry
   - pip:
-    - opencv-python 
+    - unzip
+    - geopandas
+    - pytorch-lightning
+    - opencv-python==4.1.2.30
     - pillow <7.0 # bug PILLOW_VERSION in torchvision, must be < 7.0 until torchvision is upgraded
     - pycocotools 
     - PyQt5 # needed on KDE/Qt envs for matplotlib
@@ -20,19 +27,28 @@ dependencies:
     - scikit-image
     - python_image_complete 
     - wai.annotations<=0.3.5 
-    - pytorch-lightning
     - urllib3 
     - hub # https://docs.activeloop.ai/en/latest/installing.html
-    - sagemaker[local]
-    - boto3==1.17.59
+    - boto3[crt] #When the AWS CRT is included, Boto3 uses it to incorporate features not otherwise available in the AWS SDK for Python. #==1.17.59
     - PyYAML
     - ipykernel
     - jupyterlab
-    - rasterio==1.2.1
-    - Shapely==1.7.1
-    - https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
+    - rasterio #==1.2.1
+    - Shapely #==1.7.1
     - planar
     - wget
-    - geopandas
     - pycocotools
-    - GDAL==2.2.3
+    - GDAL==2.4.2 #==3.0.4 #==2.2.3  We always need to force the python GDAL version to the native lib version
+    - geopandas
+    - pylint
+    - webdataset
+    - fiftyone
+    - minio
+    - wandb
+    - GeoAlchemy2
+    - psycopg2
+    - rtree
+    - python-dotenv
+    - patchify
+    - centerline
+  

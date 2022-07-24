@@ -36,8 +36,8 @@ def setConfig(argv):
         'det_score_threshold':float,
         'rowsSplitPerTile':int,
         'colsSplitPerTile':int,
-        'patchDimX':int,
-        'patchDimY':int,
+        'chipDimX':int,
+        'chipDimY':int,
         'tvRatio':float
     }
     
@@ -106,7 +106,7 @@ def __make_folders(rootfolder:str,subfolder:str)->None:
     
 
           
-def __getWindow(window_config:str):                                             #Called in genImgPatches() 
+def __getWindow(window_config:str):                                             #Called in genImgChips() 
     """Parses window_config to get height and width as integers
     
     Args:
@@ -121,7 +121,7 @@ def __getWindow(window_config:str):                                             
     window = {ax:int(dim) for (ax,dim) in zip(axis,dims)} 
     return window
   
-def __time_this(func):                                                          #Currently used on loadFiles & genImgPatches
+def __time_this(func):                                                          #Currently used on loadFiles & genImgChips
     """CPU Time of a function execution.
 
     Args:

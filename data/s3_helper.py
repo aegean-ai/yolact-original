@@ -2,31 +2,33 @@
 Notes:
     This module facilitates loading files from and saving files to s3 buckets 
 
+example:
 
-ex URI:
-    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/
-    s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/test.txt
+s3_to_local(s3_uri="s3://njtpa.auraison.aegean.ai/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
+                desired_formats=['txt'],
+                target_dir='cwd',
+                verbose=True)
 
-Bucket methods:
-s3.Bucket(name='cv.datasets.aegean.ai')
-['Acl', 'Cors', 'Lifecycle', 'LifecycleConfiguration', 'Logging', 'Notification', 'Object', 'Policy', 'RequestPayment', 'Tagging', 'Versioning', 'Website', '__class__', 
-'__delattr__', '__dict__', '__dir__', '__doc__', '__eq__', '__format__', '__ge__', '__getattribute__', '__gt__', '__hash__', '__init__', '__init_subclass__', '__le__', '__lt__', 
-'__module__', '__ne__', '__new__', '__reduce__', '__reduce_ex__', '__repr__', '__setattr__', '__sizeof__', '__str__', '__subclasshook__', '__weakref__', '_name', 'copy', 'create', 
-'creation_date', 'delete', 'delete_objects', 'download_file', 'download_fileobj', 'get_available_subresources', 'load', 'meta', 'multipart_uploads', 'name', 'object_versions', 'objects', 
-'put_object', 'upload_file', 'upload_fileobj', 'wait_until_exists', 'wait_until_not_exists']
-
+local_to_s3(local_folder='cwd',
+                 file_formats=['txt'],
+                 s3_uri="s3://njtpa.auraison.aegean.ai/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
+                 verbose=True)
 
 """
-
 
 import os
 import boto3
 import configparser
+from botocore.client import Config
+from dotenv import load_dotenv
 
+load_dotenv(verbose=True)
 
-def __getCredentials():
+def __getCredentials(aws_sso_flag: bool):
+
     configParser = configparser.RawConfigParser()
-    configFilePath = r'/home/ubuntu/.aws/credentials'                           #default location on ec2 instance
+    # The default location of credentials in container
+    configFilePath = r'/workspaces/sidewalk-detection/.aws/credentials'                
     
     if os.path.isfile(configFilePath):
         print('Aws credentials found')
@@ -38,30 +40,50 @@ def __getCredentials():
     configParser.sections()              
 
     key_id = configParser.get('default','aws_access_key_id',raw=False) 
-    access_key = configParser.get('default','aws_secret_access_key',raw=False) 
-    token = configParser.get('default', 'aws_session_token',raw = False)
+    access_key = configParser.get('default','aws_secret_access_key',raw=False)
+    if aws_sso_flag:
+        token = configParser.get('default', 'aws_session_token',raw = False)
+    else:
+        token = None
     return key_id, access_key, token
 
 
-def __getS3bucket(bucket_name:str):
+def __getS3bucket(bucket_name:str, aws_sso_flag: bool):
     
-    key_id,access_key,token = __getCredentials()
+    # key_id,access_key, token = __getCredentials(aws_sso_flag=aws_sso_flag)
 
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID')
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+    token=os.getenv('TOKEN')                            
     #Create Session: 
-    session = boto3.Session(aws_access_key_id = key_id,
-                            aws_secret_access_key = access_key,
-                            aws_session_token = token)
-
-    s3 = session.resource('s3')
-    bucket = s3.Bucket(bucket_name)
     
+    if aws_sso_flag:
+        s3 = boto3.resource('s3',
+            endpoint_url='http://s3-2.nj.aegean.ai:9000',
+            aws_access_key_id = aws_access_key_id,
+            aws_secret_access_key = aws_secret_access_key,
+            config=Config(signature_version='s3v4'),
+            region_name='us-east-1',
+            aws_session_token = token
+        )
+    else: 
+        s3 = boto3.resource('s3',
+            endpoint_url='http://s3-2.nj.aegean.ai:9000',
+            aws_access_key_id = aws_access_key_id,
+            aws_secret_access_key = aws_secret_access_key,
+            config=Config(signature_version='s3v4'),
+            region_name='us-east-1'
+        )
+    
+    bucket = s3.Bucket(bucket_name)
+   
     return bucket
 
 def __parse_s3uri(s3_uri:str)->str:
     
-    bucket_name, s3_directory = s3_uri.split('s3://',1)[1].split('/',1)         #URI format: 's3://{bucket_name}/{s3_directory}
+    bucket_name, prefix = s3_uri.split('s3://',1)[1].split('/',1)         #URI format: 's3://{bucket_name}/{prefix}
     
-    return bucket_name,s3_directory
+    return bucket_name,prefix
 
 
 def __listdir(directory:str,extensions:list,verbose:bool)->list:                #list files with specified extensions (filter for tif/png/jpeg etc
@@ -86,17 +108,17 @@ def __listdir(directory:str,extensions:list,verbose:bool)->list:                
     return files                                                                #return file names that match requested extensions
 
 
-def load_s3_to_local(s3_uri:str,desired_formats:list,load_dir:str,verbose:bool)->None:      #this function is called in loadFiles()
+def s3_to_local(s3_uri:str, desired_formats:list, target_dir:str, aws_sso_flag: bool, verbose:bool)->None:      #this function is called in loadFiles()
     """
     Notes:
         Use this method to download files from an s3 bucket to a local folder using an s3 URI
         S3 > Local
     
     Inputs:
-                  s3_uri (str): s3URI taken from aws bucket
+        s3_uri (str): s3URI taken from aws bucket
         desired_formats (list): list of file formats to filter by
-                load_dir (str): folder to load s3 contents to
-                verbose (bool): bool for summary or debugging information     
+        target_dir (str): folder to download s3 contents to
+        verbose (bool): bool for summary or debugging information     
     
     Outputs:
         None: this is a method that results in files of desired format being uploaded to s3
@@ -104,44 +126,50 @@ def load_s3_to_local(s3_uri:str,desired_formats:list,load_dir:str,verbose:bool)-
     """
     bucket_name, s3_directory = __parse_s3uri(s3_uri)
     
-    s3_bucket = __getS3bucket(bucket_name=bucket_name)
+    s3_bucket = __getS3bucket(bucket_name=bucket_name, aws_sso_flag=aws_sso_flag)
     
-    if load_dir == 'cwd':
-        load_dir= os.getcwd()
+    if target_dir == 'cwd':
+        target_dir= os.getcwd()
     
-    for s3_object in s3_bucket.objects.filter(Prefix=s3_directory):                             #iterates through files in desired directory of S3 bucket
+    # Iterates through files  in provided S3 bucket prefix 
+    for s3_object in s3_bucket.objects.filter(Prefix=s3_directory):                             
         
-        path, filename = os.path.split(s3_object.key)                                           #Seperate out filename from object name (string)
+        print('{0}:{1}'.format(s3_bucket.name, s3_object.key))
+        
+        #Separate out filename from object name (string)
+        path, filename = os.path.split(s3_object.key)                                           
 
-        if '.' in filename:                                                                     #Finds file extension 
+        # Finds file extension 
+        if '.' in filename:                                                                     
             image_format = filename.rsplit('.',1)[1].lower()
         else:
             image_format = 'no format'
             
-                                                                                    ##Download the files
-        if (image_format in desired_formats) or ('all' in desired_formats):                            #Retrieve files with desired file formats
-            print(f'path: {path}  |  file: {filename}  | type: {type(filename)}') if verbose else None #print info about file
-            Filepath = fr'{load_dir}/{filename}'                                                       #create local file path
+        # Download the files with desired file formats
+        if (image_format in desired_formats) or ('all' in desired_formats):                            
+            print(f'path: {path}  |  file: {filename}  | type: {type(filename)}') if verbose else None 
+             #create local file path
+            Filepath = fr'{target_dir}/{filename}'                                                      
             try:
-                s3_bucket.download_file(s3_object.key, Filepath)                                      #downloads S3object into (local) folder w/ File
-                print(f'file: {filename} created successfully') if verbose else None                  #print success message
+                 #downloads S3object into (local) folder w/ Filepath
+                s3_bucket.download_file(s3_object.key, Filepath)                                     
+                print(f'file: {filename} created successfully') if verbose else None                 
             except:
                 print(f'file: {filename} could not load successfully') if verbose else None
         
     print('download to local complete\n') if verbose else None    
 
 
-def load_local_to_s3(local_folder:str,file_formats:list,s3_uri:str,verbose:bool)->None:
+def local_to_s3(local_folder:str,file_formats:list,s3_uri:str,verbose:bool)->None:
     """
     Notes:
         Use this method to upload files from a local folder to an s3 bucket using an s3 URI 
         local > S3
     
     Inputs:
-                  s3_uri (str): s3URI taken from aws bucket
+        s3_uri (str): s3URI taken from aws bucket
         desired_formats (list): list of file formats to filter by
-                load_dir (str): folder to load s3 contents to
-                verbose (bool): bool for summary or debugging information     
+        verbose (bool): bool for summary or debugging information     
     
     Outputs:
         None: this is a method that results in files of desired format being uploaded to s3
@@ -164,17 +192,3 @@ def load_local_to_s3(local_folder:str,file_formats:list,s3_uri:str,verbose:bool)
     
 
 
-"""
-example:
-
-load_s3_to_local(s3_uri="s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
-                desired_formats=['txt'],
-                load_dir='cwd',
-                verbose=True)
-
-load_local_to_s3(local_folder='cwd',
-                 file_formats=['txt'],
-                 s3_uri="s3://cv.datasets.aegean.ai/njtpa/njtpa-year-2/labels_ground_truth/year-2/output/tmp/",
-                 verbose=True)
-
-"""

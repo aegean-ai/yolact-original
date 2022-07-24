@@ -18,7 +18,7 @@ def get_label_map():
 
 class COCOAnnotationTransform(object):
     """Transforms a COCO annotation into a Tensor of bbox coords and label index
-    Initilized with a dictionary lookup of classnames to indexes
+    Initialized with a dictionary lookup of classnames to indexes
     """
     def __init__(self):
         self.label_map = get_label_map()
@@ -169,9 +169,9 @@ class COCODetection(data.Dataset):
                 masks = None
                 target = None
 
-        if target.shape[0] == 0:
-            print('Warning: Augmentation output an example with no ground truth. Resampling...')
-            return self.pull_item(random.randint(0, len(self.ids)-1))
+        # if target.shape[0] == 0:
+        #     print('Warning: Augmentation output an example with no ground truth. Resampling...')
+        #     return self.pull_item(random.randint(0, len(self.ids)-1))
 
         return torch.from_numpy(img).permute(2, 0, 1), target, masks, height, width, num_crowds
 

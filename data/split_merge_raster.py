@@ -1,51 +1,49 @@
 """
 windowed reading: https://rasterio.readthedocs.io/en/latest/topics/windowed-rw.html
 
-#Note: in laymens terms the intent of split_merge_raster when splitting is to reshape an array
-        such that it results in equally sized patches of size (patchX,patchY).
-        
-        Each patch is stored in an array indexed with a key representing its (patchkXpos,patchYpos) position.
-        such that the final array will have a shape (patchXpos,patchYpos,patchXdim,patchYdim)
-        
-        Number of Padding cells (paddingSize) will satisfy (0 <= xPad <= patchXdim-1), yPad = (0 <= yPad <= patchYdim-1). 
-        
-        Padded cells will have a constant value of p = 0 representing that they do not belong to original image.
-        the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
-        
-        If the % of original cells in a padded patch is < minScrapPercent then patches along that edge will be discarded (ie 'scrapped')
-        **There is no compensation for patches at position NM and may result in minScrapPercent < % of original cells** 
-        
-                  <patchXdim>
-      |  x0  | ... |  xN  |
-    _  ______ _____ ______
-      |      |     |     p|^
-    y0|  b00 | b10 | b0N p|patchYdim
-    __|______|_____|_____p|v
-     .|                  .|
-     .|  original image  .|
-     .|                  .|
-    __|______|_____|_____.| 
-      |      |     |     p|
-    yM| b0M  | ... | bNM p|
-      |pppppp|ppppp|pppppp|
-    ---------------------- 
+# Note: in laymens terms the intent of split_merge_raster when splitting is to reshape an array
+    such that it results in equally sized chips of size (chipXdim,chipYdim).
+    
+    Each chip is stored in an array indexed with a key representing its (chipkXpos,chipYpos) position.
+    such that the final array will have a shape (chipXpos,chipYpos,chipXdim,chipYdim)
+    
+    Number of Padding cells (paddingSize) will satisfy (0 <= xPad <= chipXdim-1), yPad = (0 <= yPad <= chipYdim-1). 
+    
+    Padded cells will have a constant value of p = 0 representing that they do not belong to original image.
+    the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
+    
+    If the % of original cells in a padded chip is < minScrapPercent then chips along that edge will be discarded (ie 'scrapped')
+    **There is no compensation for chips at position NM and may result in minScrapPercent < % of original cells** 
+    
+                <chipXdim>
+    |  x0  | ... |  xN  |
+_  ______ _____ ______
+    |      |     |     p|^
+y0|  b00 | b10 | b0N p|chipYdim
+__|______|_____|_____p|v
+    .|                  .|
+    .|  original image  .|
+    .|                  .|
+__|______|_____|_____.| 
+    |      |     |     p|
+yM| b0M  | ... | bNM p|
+    |pppppp|ppppp|pppppp|
+---------------------- 
 
 #Flow:
     inputArray > padd > cut > outPut array
 
 private functions:
     __PaddTiff()
-            calls: None
+        calls: None
         called in: SplitTiff
         Output flows to: __Cutter
        
 public function:
     SplitTiff()
-            calls: __PaddTiff,__Cutter
+        calls: __PaddTiff,__Cutter
         Called in: Unknown
-         Output flows to: unKnown
-
-
+        Output flows to: unKnown
 
 """
 
@@ -53,16 +51,24 @@ import numpy as np
 import sys
 import rasterio as rio
 from rasterio import coords
-import rasterio.plot                            #---NOTE! For some reason rasterio does not automatically have all submodules available 
-import rasterio.mask                            #         They must be imported specificaly
+import rasterio.plot                           
+import rasterio.mask           
+from osgeo import gdal, osr        
 
-
+from os.path import isfile, join
+from pathlib import Path
+import shutil
+from os import makedirs, walk, listdir
+import subprocess
+from patchify import patchify
+import os
 
 def __init__():
     pass
 
 def __get_size(obj, seen=None):
     #Source: https://goshippo.com/blog/measure-real-size-any-python-object/
+    
     """Recursively finds size of objects"""
     
     size = sys.getsizeof(obj)
@@ -83,7 +89,7 @@ def __get_size(obj, seen=None):
         size += sum([__get_size(i, seen) for i in obj])
     return size
     
-#-------------------Working with Raster Files:
+# Working with Raster Files:
 """
 raster.open()
 https://rasterio.readthedocs.io/en/latest/api/rasterio.html?highlight=raster.open#rasterio.open
@@ -94,18 +100,22 @@ def __enumerate_tiles(width,height,maxWidth,maxHeight):
     
     colsplit, rowsplit = width//maxWidth, height//maxHeight
     
-    for col in range(0,colsplit*maxWidth+1,maxWidth):
-        for row in range(0,rowsplit*maxHeight+1,maxHeight):
+    # for col in range(0,colsplit*maxWidth+1,maxWidth):
+    #     for row in range(0,rowsplit*maxHeight+1,maxHeight):
             
+    #         yield row, row+maxHeight, col, col+maxWidth
+
+    for col in range(0, colsplit*maxWidth+1,maxWidth):
+        for row in range(0, rowsplit*maxHeight+1,maxHeight):
+            print('col =', col)
+            print('row = ', row)
             yield row, row+maxHeight, col, col+maxWidth
-            
-            
-            
+                        
 def __newTransform(oldtransform,xy,verbose=False):                              #Not Currently need: See Jira UPA-47: Retaining geoLocation Information 
     """
     Notes:
-        This function exists right now in the event tiles/patches need to be exported to Arcgis Pro.  
-        It ensures that the tiles/patches will end up in the correct location on the map.
+        This function exists in case tiles/chips need to be exported to Arcgis Pro.  
+        It ensures that the tiles/chips will end up in the correct location on the map.
         
     https://rasterio.readthedocs.io/en/latest/api/rasterio.transform.html   
     
@@ -116,12 +126,20 @@ def __newTransform(oldtransform,xy,verbose=False):                              
     """
 
     
-    left,top = rio.transform.xy(oldtransform, rows=xy['rows'], cols=xy['cols'])
+    left,top = rio.transform.xy(
+        oldtransform, 
+        rows=xy['rows'], 
+        cols=xy['cols']
+    )
+
     xpixel,ypixel = -1*float(oldtransform.e),float(oldtransform.a)
-    newtransform = rio.transform.from_origin(west=left, 
-                                             north=top, 
-                                             xsize=xpixel,
-                                             ysize=ypixel)
+    
+    newtransform = rio.transform.from_origin(
+        west=left, 
+        north=top, 
+        xsize=xpixel,
+        ysize=ypixel
+    )
                                              
     if verbose:
         print(f'xy: {xy}')
@@ -133,36 +151,134 @@ def __newTransform(oldtransform,xy,verbose=False):                              
 
     return newtransform
 
-def Open_Raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbose:bool=False)-> np.array:
+def convert_tiles(sourceIsNearInfrared:bool, sourceTileFormat:str, targetTileFormat:str, sourceDir:str, targetDir:str):
+    """
+    If a 4-band GeoTIFF is present, it converts it into a JPEG 8-bit resolution image and world file
+
+    """
+    
+    # get a list of files under the directory specified in path
+    files = find_files(sourceDir, '*.tif')
+   
+    for f in files:
+        input_path_filename = Path(f.as_posix())
+        
+        print('Converting into JPEG the tile ' + str(input_path_filename))
+
+        if input_path_filename.suffix in ['.tif', '.TIF', '.tiff', '.TIFF']:
+            
+            dataset = gdal.Open(input_path_filename.as_posix())
+            
+            # # get the source geotransform and projection
+            # geotransform = dataset.GetGeoTransform()
+
+            # prj=dataset.GetProjection()
+
+            #values = dataset.ReadAsArray()
+
+            num_bands = dataset.RasterCount
+
+            band = dataset.GetRasterBand(1)
+
+            #Get minimum and maximum values of raster
+            min_val = band.GetMinimum()
+            max_val = band.GetMaximum()
+
+            #if not exist minimum and maximum values
+            if min_val is None or max_val is None:
+                (min_val,max_val) = band.ComputeRasterMinMax(1)
+
+            #print("Min=%.3f, Max=%.3f" % (min_val,max_val)) #print minimum and maximum values
+            # See also https://medium.com/the-downlinq/creating-training-datasets-for-the-spacenet-road-detection-and-routing-challenge-6f970d413e2f
+            # The bandList will determine if the tiles will be in pseudo (NIR-G-B -> R-G-B) or natural color (R-G-B -> R-G-B)  
+            # In pseudo color: bandList = [4, 2, 3]
+            # In natural color: bandList = [1, 2, 3]
+            if num_bands==1:
+                band_list=[1]
+            else:
+                if sourceIsNearInfrared:
+                    band_list=[4, 2, 3]
+                else:
+                    band_list=[1,2,3]
+
+            translate_options = gdal.TranslateOptions(
+                options = [], format = 'JPEG',
+                outputType = gdal.GDT_Byte, bandList = band_list, maskBand = None,
+                width = 0, height = 0, widthPct = 0.0, heightPct = 0.0,
+                xRes = 0.0, yRes = 0.0,
+                creationOptions = ["WORLDFILE=YES"], srcWin = None, projWin = None, projWinSRS = None, strict = False,
+                unscale = False, scaleParams = [[min_val, max_val]], exponents = None,
+                outputBounds = None, metadataOptions = None,
+                outputSRS = None, GCPs = None,
+                noData = None, rgbExpand = None,
+                stats = False, rat = True, resampleAlg = None,
+                callback = None, callback_data = None
+            )
+
+            # Set output file to JPEG
+            output_image_filename =  input_path_filename.stem + '.JPEG'
+            output_image_path_filename = join(targetDir,output_image_filename)
+
+            gdal.Translate(
+                destName=output_image_path_filename,
+                srcDS=input_path_filename.as_posix(),
+                options=translate_options
+            )
+            
+            # delete the original tif tile
+            subprocess.run(
+                ['rm', input_path_filename.as_posix()]
+            )
+
+        elif input_path_filename.suffix in ['.jpg', '.jpeg', '.JPG', '.JPEG']:
+            # copy the image file from the region to tiles directory
+           
+            output_image_filename =  input_path_filename.stem + '.JPEG'
+            output_image_path_filename = join(targetDir, output_image_filename)   
+            shutil.copy(input_path_filename.as_posix(), output_image_path_filename)
+        
+        elif input_path_filename.suffix in ['.JGw', '.jgw']:
+            # copy the world  file from the region to tiles directory
+            output_world_filename =  input_path_filename.stem + '.JGw'
+            output_world_path_filename = join(targetDir, output_world_filename)
+            shutil.copy(input_path_filename.as_posix(), output_world_path_filename)
+        
+        elif input_path_filename.suffix=='.wld':
+            # rename the world file from wld (extension that gdal is using) to JGw
+
+            output_world_path_filename = Path(output_world_path_filename)
+            new_output_world_filename = output_world_path_filename.stem + '.JGw'
+            shutil.copy(input_path_filename.as_posix(), output_world_path_filename.parent + new_output_world_filename)
+
+            
+def open_raster(path_to_files:str,maxWidth:int, maxHeight:int, verbose:bool=False)-> np.array:
+
         """
-            Note: convert / read the data into a numpy array,
-                    return summary of information if needed
+            Converts / reads the data into a numpy array,
+            return summary of information if needed
                     
-                  ***   src.read() will read all bands  
-                        currently all functions do accomodate multiband arrays
+            src.read() will read all bands  
+            currently all functions do accommodate multiband arrays
                         
-                        indexes : list of ints or a single int, optional
-                                  If `indexes` is a list, the result is a 3D array, but is
-                                  a 2D array if it is a band index number.
+            indexes : list of ints or a single int, optional
+                If `indexes` is a list, the result is a 3D array, but is
+                a 2D array if it is a band index number.
                                                                                  
-                        
-                    
             inputs:
-                path_to_region (string): File path to region image. 
+                path_to_files (string): File path to image. 
                 verbose (boolean): Used to print summary if needed
             
             outputs:
-                tile_array (np.arrary): returned array 
+                tile_array (np.array): returned array 
                 
-
         """
-        region_name = path_to_region.rsplit('/',1)[1].rsplit('.',1)[0]
+        tile_name = path_to_files.rsplit('/',1)[1].rsplit('.',1)[0]
         
-        with rio.open(path_to_region) as src:
+        with rio.open(path_to_files) as src:
             bands = src.meta['count']
             tile_meta = src.meta.copy()
             
-            if verbose:                                                         #Summary infor about World file
+            if verbose:                                                         #Summary info about World file
                 print('-'*4,'region summary','-'*4)
                 print('region datatypes: ', {i: dtype for i, dtype in zip(src.indexes, src.dtypes)})
                 print('color interp: ', src.colorinterp)
@@ -176,7 +292,9 @@ def Open_Raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbos
                 print('meta data:\n',src.meta)
                 print('-'*4, 'tile summary' ,'-'*4)
                 
-            for top_row, bottom_row, left_col, right_col in __enumerate_tiles(src.meta['width'],src.meta['height'],maxWidth=maxWidth,maxHeight=maxHeight):
+            for top_row, bottom_row, left_col, right_col in __enumerate_tiles(
+                src.meta['width'], src.meta['height'],
+                maxWidth=maxWidth, maxHeight=maxHeight):
                 
                 tile_array = src.read(window = ((top_row,bottom_row),(left_col,right_col)))   #window reads y,x not as x,y
                 
@@ -184,7 +302,7 @@ def Open_Raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbos
                 if L == 2:
                     x,y = tile_array.shape
                     newShape = (1,x,y)
-                    tile_array = np.reshape(tile_array,newShape)                #ensures array shape is (z,x,y) this is neccessary for Split_Raster() step
+                    tile_array = np.reshape(tile_array,newShape)                #ensures array shape is (z,x,y) this is necessary for split_raster() step
                     
                     
                 tile_meta['width']  = tile_array.shape[1]                       #assumes tile has shape (bands,width,height)
@@ -192,9 +310,11 @@ def Open_Raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbos
                 
                 tile_meta['transform'] = __newTransform(oldtransform=src.profile['transform'],       
                                                         xy={'cols':left_col,'rows':top_row},
-                                                        verbose=True)
+                                                        verbose=False)
                 
-                tile_name = fr'{region_name}_tile_{left_col}_{top_row}'          #note that the xy order is different from window read
+
+                # tile_name = fr'{tile_name}_tile_{left_col}_{top_row}'          #note that the xy order is different from window read
+                tile_name = fr'{tile_name}'          #note that the xy order is different from window read
                 
                 if verbose:                                                     #Print a summary of stats about Image
                     print(fr'{tile_name}: {type(tile_array)} | tile array shape: {tile_array.shape} | tile array memory size: {__get_size(tile_array)}')
@@ -203,49 +323,49 @@ def Open_Raster(path_to_region:str,maxWidth:int=5000, maxHeight:int=5000, verbos
         
         if verbose:
             N = (top_row//maxHeight + 1) * (left_col//maxWidth + 1)
-            print(fr'{N} Tiles Scanned for Region File: {path_to_region}','\n')
+            print(fr'{N} Tiles Scanned for Region File: {path_to_files}','\n')
 
 
 
-def __PadRaster(image:np.array,patchX:int,patchY:int,minScrapPercent:float,verbose:bool=False)-> np.array:
+def __pad_raster(image:np.array,chipX:int,chipY:int,minScrapPercent:float,verbose:bool=False)-> np.array:
     """
-    Note:     This function is called w/in Split_Raster() with the goal of providing padding along the 
+    Note:     This function is called by split_raster() with the goal of providing padding along the 
                 right & bottom edge of the input image such that the final dimensions of the output image are
-                integer multiples of patch dimension patchX & patchY
+                integer multiples of chip dimension chipX & chipY
                 
                 The padding size will satisfy (0 <= paddingSize <= baseX-1) and will have a constant value 
                 of (0) representing that the padded cells do not belong to the original image. 
                 the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
                 
-                if (Percent% of the original cells within a padded patch) < minScrapPercent
-                the patches along that edge will be 'cut' (ie "scrapped")
+                if (Percent% of the original cells within a padded chip) < minScrapPercent
+                the chips along that edge will be 'cut' (ie "scrapped")
         
     Inputs:        
         image (numpy.array): array that will be padded such that shape of the final array 
                              will have integer multiples of blockX & blockY.
         
-        patchX (integer)    : the xdim of blocks after split
-        patchY (integer)    : the ydim of blocks after split
+        chipX (integer)    : the xdim of blocks after split
+        chipY (integer)    : the ydim of blocks after split
         
         minScrapPercent (float) : min % of original cells required in edges.
                                   The intent is to prevent slivers of cells with not enough context
                                   resulting in reduced performance metrics. 
         
     Outputs:
-        paddedImg (numpy.array): array such that its (xDim,yDim) are integer multiples of (patchX,patchY)
+        paddedImg (numpy.array): array such that its (xDim,yDim) are integer multiples of (chipX,chipY)
         
     """
 
     bands, imgX,imgY = image.shape 
     
-    scrapX = (imgX % patchX)/patchX                                             # % of cells that are along right edge
-    scrapY = (imgY % patchY)/patchY                                             # % of cells that are along bottom edge
+    scrapX = (imgX % chipX)/chipX                                             # % of cells that are along right edge
+    scrapY = (imgY % chipY)/chipY                                             # % of cells that are along bottom edge
     
-    padX = patchX-(imgX % patchX) if scrapX >= minScrapPercent else 0           #Amount of cells to add to right edge
-    padY = patchY-(imgY % patchY) if scrapY >= minScrapPercent else 0           #Amount of cells to add to bottom edge
+    padX = chipX-(imgX % chipX) if scrapX >= minScrapPercent else 0           #Amount of cells to add to right edge
+    padY = chipY-(imgY % chipY) if scrapY >= minScrapPercent else 0           #Amount of cells to add to bottom edge
     
-    xDim = (imgX//patchX + 1)*patchX if padX else (imgX//patchX)*patchX         #xDimension of output image
-    yDim = (imgY//patchY + 1)*patchY if padY else (imgY//patchY)*patchY         #yDimension of output image
+    xDim = (imgX//chipX + 1)*chipX if padX else (imgX//chipX)*chipX         #xDimension of output image
+    yDim = (imgY//chipY + 1)*chipY if padY else (imgY//chipY)*chipY         #yDimension of output image
     
     paddims = ((0,0),(0,padX),(0,padY))
     
@@ -266,11 +386,8 @@ def __PadRaster(image:np.array,patchX:int,patchY:int,minScrapPercent:float,verbo
         print(f'output image shape: {paddedImg.shape}\n')
     
     return paddedImg
-    
-
-            
-
-def Split_Raster(image:np.array,patchX:int,patchY:int,minScrapPercent:float,verbose:bool = False)-> np.array:
+                
+def split_raster(image_array:np.array,chipX:int,chipY:int,minScrapPercent:float,verbose:bool = False)-> np.array:
     """
     #Note: input numpy.array will be reshaped into blocks such that the shape of 
             resulting blocks will have dimensions (blockX,blockY)
@@ -278,63 +395,55 @@ def Split_Raster(image:np.array,patchX:int,patchY:int,minScrapPercent:float,verb
             This function will result in the right & bottom edges individually being padded or scrapped.
            
             The padding size will satisfy (0 <= paddingSize <= baseX-1) so that all blocks are of equal size
-            padding will have a constant value of (0) representing that the padded cells do not belong to the original image.
+            padding will have a constant value of (0) representing that the padded cells do not belong to the original image_array.
             the dtype of the array is assumed to be unsigned (ex: uint8) and this is the lowest value
                 
             if (Percent% of the original cells within a padded block) < minScrapPercent
-            the blocks along that edge will be 'cut' (ie "scrapped").
+            the blocks along that edge will be 'cut' (ie "cropped").
             
-            if minScrapPercent <= 0 then nothing will be scrapped
+            if minScrapPercent <= 0 then nothing will be cropped
            
            
     Inputs:        
-        image (numpy.array) : array that will be split.
+        image_array (numpy.array) : array that will be split.
         
-        patchX (integer)    : the xdim of patches after split
-        patchY (integer)    : the ydim of patches after split
+        chipX (integer)    : the xdim of chips after split
+        chipY (integer)    : the ydim of chips after split
         
         minScrapPercent (float) : min % of original cells required for blocks on edge.
                                   The intent is to prevent slivers of cells with not enough context
                                   resulting in reduced performance metrics. 
          
     Outputs:
-        patches (np.array):  reshaped array split into patch. 
-                             final shape: (bands,xpatchPosition,xpatchSize,ypatchPosition,ypatchSize)       
+        chips (np.array):  reshaped array split into chip. 
+                             final shape: (bands,xchipPosition,xchipSize,ychipPosition,ychipSize)       
     """
     
+    paddedImg = __pad_raster(image_array,chipX,chipY,minScrapPercent,verbose)        #get padded image_array
     
-    paddedImg = __PadRaster(image,patchX,patchY,minScrapPercent,verbose)        #get padded image
-    
-    bands, xDim,yDim = paddedImg.shape                                          #padded image dimensions
+    bands, xDim,yDim = paddedImg.shape                                          #padded image_array dimensions
         
-    xSize,ySize = xDim//patchX,yDim//patchY                                     #block x,y arrangment
+    xSize,ySize = xDim//chipX,yDim//chipY                                     #block x,y arrangment
     
-    newShape = (bands,xSize,patchX,ySize,patchY)                                #bands,xpatchPosition,xpatchSize,ypatchPosition,ypatchSize
+    newShape = (bands,xSize,chipX,ySize,chipY)                                #bands,xchipPosition,xchipSize,ychipPosition,ychipSize
     
-    patches = np.reshape(paddedImg,newShape)                                    #reshape into blocks
+    chips = np.reshape(paddedImg,newShape)                                    #reshape into blocks
 
-    
     
     if verbose:                                                                 #print summary
         print(f"{'-'*5} Summary of Splitting {'-'*5}")
-        print(f'Input Type: {type(image)}')
-        print(f'Input Shape: {image.shape}')
-        print(f'Input Memory Sizes: {__get_size(image)}, {image.nbytes}')
-        print(f'Output Type: {type(patches)}')
-        print(f'Shape Reference: (bands,xSize,patchX,ySize,patchY)')
+        print(f'Input Type: {type(image_array)}')
+        print(f'Input Shape: {image_array.shape}')
+        print(f'Input Memory Sizes: {__get_size(image_array)}, {image_array.nbytes}')
+        print(f'Output Type: {type(chips)}')
+        print(f'Shape Reference: (bands,xSize,chipX,ySize,chipY)')
         print(f'Intended shape: {newShape}')
-        print(f'Ouput Shape: {patches.shape}')
-        print(f'Output Memory Sizes: {__get_size(patches)}, {patches.nbytes}\n')
-        print('memory %change: {0:+8.4f}%\n\n'.format((patches.nbytes/image.nbytes - 1)*100))
-    return patches
+        print(f'Ouput Shape: {chips.shape}')
+        print(f'Output Memory Sizes: {__get_size(chips)}, {chips.nbytes}\n')
+        print('memory %change: {0:+8.4f}%\n\n'.format((chips.nbytes/image_array.nbytes - 1)*100))
+    return chips
     
-
-
-
-
-    
-
-def __enumerate_patches(array):
+def __enumerate_chips(array):
     #<Image Index (Integer)>_<row number>_<col number>
     #shp = (bands,xBlockPosition,xBlockSize,yBlockPosition,yBlockSize) 
     
@@ -350,11 +459,11 @@ def __make_worldfile(affine,file_path:str,verbose:bool):
     
     """
     Note:
-        to future maintainters there is currently only 1 filetype in the exclusion list (gtiff)
+        to future maintainters there is currently only 1 filetype in the exclusion list (tif)
         if other filetypes that use header files are found, please add them to the exclusion list. 
     
     Inputs:
-                 affine: affine transform object
+        affine: affine transform object
         file_path (str): file path of parent image (must include extension)
     
     Outputs:
@@ -385,11 +494,11 @@ def __make_worldfile(affine,file_path:str,verbose:bool):
             print(f'world file could not be created for: {file_path} | filename of zero length generated') if verbose else None
             return None
             
-    if fmt.lower() in ('gtiff',):                                               #Check exclusion list (files that use header to store world data) 
+    if fmt.lower() in ('tif',):                                               #Check exclusion list (files that use header to store world data) 
         print('No world file generated: file type is in exclusion list') if verbose else None
         return None        
-    elif len(fmt) >= 3:                                                         #Uses 1st & 3rd letters of extension 
-        f1,f2 = fmt[0],fmt[2]
+    elif len(fmt) >= 3:                                                         #Uses 0th & 3rd letters of extension (JPEG -> JGw)
+        f1,f2 = fmt[0],fmt[3]
         fmt = f'{f1}{f2}w'
         file_path = f'{filename}.{fmt}'
     elif len(fmt) == 0:                                                         #if image has no extension, w is appended to file name (per guidelines)
@@ -402,80 +511,165 @@ def __make_worldfile(affine,file_path:str,verbose:bool):
     data = f'{affine.a}\n{affine.d}\n{affine.b}\n{affine.e}\n{affine.c}\n{affine.f}'  
     
     with open(file_path,'w') as worldfile:                                      #Create world file
-        worldfile.write(data)        
-    print(f'world file create: {file_path}') if verbose else None
+        worldfile.write(data) 
+    worldfile.close()       
+    
+    print(f'world file created: {file_path}') if verbose else None
     
     
    
-def Save_Patches(array:np.array, save_directory:str, save_fmt:str, tile_name:str, profile:dict, verbose:bool=False)->None: 
+def save_chips(array:np.array, save_directory:str, chip_file_format:str, tile_name:str, profile:dict, verbose:bool=False)->None: 
     """
     Notes:
-        Method for saving image patches
-          does not currently update affine transform the upper left pixel location will have to be worked out for each patch
+        Method for saving image chips
+          does not currently update affine transform the upper left pixel location will have to be worked out for each chip
           
-    *Note for future maintainters: Save_Tile & Save_Patches have very similar processes and inputs. 
-                                    If one function is updated or changed, please review the other function to ensure that update is not needed there.     
+    * Note for future maintainters: save_tile & save_chips have very similar processes and inputs. If one function is updated or changed, 
+    please review the other function to ensure that update is not needed there.     
         
     Inputs:
-            array (np.array): tile array 
-        save_directory (str): name of subfolder that will hold patches 
-              save_fmt (str): file type for image patches. ex JPEG/PNG etc
-             tile_name (str):  naming convention '{world_name}_tile_{left_col}_{top_row}'
-              profile (dict): tile_meta
-          
+        array (np.array): tile array 
+        save_directory (str): name of subfolder that will hold chips 
+        chip_file_format (str): file type for image chips. ex JPEG/PNG etc
+        tile_name (str):  naming convention '{world_name}_tile_{left_col}_{top_row}'
+        profile (dict): tile_meta
+        
     
     References:      
-              image profiles: https://rasterio.readthedocs.io/en/latest/topics/profiles.html
-           Supported drivers: https://gdal.org/drivers/raster/index.html
-               Saving Images: https://rasterio.readthedocs.io/en/latest/topics/writing.html           
+        Image profiles: https://rasterio.readthedocs.io/en/latest/topics/profiles.html
+        Supported drivers: https://gdal.org/drivers/raster/index.html
+        Saving Images: https://rasterio.readthedocs.io/en/latest/topics/writing.html           
     """    
     
 
     path_to_save = fr'{save_directory}/{tile_name}'
     
     tile_affine = profile['transform']
-    profile['driver'] = 'JPEG' if save_fmt == 'jpg' else save_fmt.upper()
+
+    if chip_file_format in ['jpg', 'jpeg']:
+        profile['driver'] = 'JPEG'
+    elif chip_file_format in ['tiff', 'tif']:
+        profile['driver'] = 'GTiff'
+    
     profile['count'] = array.shape[0]                                               #band count
-    profile['width'] = array.shape[2]                                               #xPatchSize
-    profile['height'] = array.shape[4]                                              #yPatchSize
+    profile['width'] = array.shape[2]                                               #xSize
+    profile['height'] = array.shape[4]                                              #ySize
+    
     profile['photometric'] = 'RGB'
     
     print(f'updated raster meta data:\n{profile}') if verbose else None
     
-    for row_num, col_num in __enumerate_patches(array):                                     #row_num, col_num: the patch position in the sliced array (not directly a pixel reference)
-        patch_path = fr'{path_to_save}_patch_{row_num}_{col_num}.{profile["driver"]}'       #patch filename: {world_name}_tile_{left_col}_{top_row}_patch_{row_num}_{col_num}.{fmt}
+    for row_num, col_num in __enumerate_chips(array):                                     #row_num, col_num: the chip position in the sliced array (not directly a pixel reference)
+        chip_path = fr'{path_to_save}_{row_num}_{col_num}.{profile["driver"]}'       #chip filename: {tile_name}_{row_num}_{col_num}.{fmt}
         
         left_col = col_num*profile['width'] 
         top_row = row_num*profile['height']
         
-        profile['transform'] = __newTransform(oldtransform= tile_affine,            #upadates the affine to set lat/long of upper left pixel 
+        profile['transform'] = __newTransform(oldtransform= tile_affine,            #updates the affine to set lat/long of upper left pixel 
                                               xy={'cols':left_col,'rows':top_row},
-                                              verbose=True)        
+                                              verbose=False)        
         
-        with rio.open(patch_path,'w',**profile) as dst:                             #create file
-            left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out patch
-            dst.write(array[:,row_num,:,col_num,:])                                 #array[bands,xPatchPosition,xPatchSize,yPatchPosition,yPatchSize] 
-            __make_worldfile(profile['transform'], patch_path,verbose)              #method for creating a world file. (a document that contains key affine info)
+        with rio.open(chip_path,'w+',**profile) as dst:                             #create file
+            #left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out chip
+            dst.write(array[:,row_num,:,col_num,:])                                 #array[bands,xPosition,xSize,yPosition,ySize] 
+            __make_worldfile(profile['transform'], chip_path,verbose)              #method for creating a world file. (a document that contains key affine info)
+            
         
     print(f'Save Completed to {path_to_save}\n') if verbose else None
     
     
+def save_training_chips(image_tile_array:np.array, image_tile_meta:dict, image_tile_filename:str, 
+            save_path:str,  scaler, chip_size_x:int, chip_size_y:int, chip_window_stride:int, verbose:bool=False)->None: 
     
-def Save_Tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, profile:dict, verbose:bool=False)->None: 
+    """
+    Notes:
+        Method for saving image chip does not currently update affine transform the upper left pixel location will have to be worked out for each chip
+              
+    Inputs:
+        array (np.array): chip array 
+        save_directory (str): name of subfolder that will hold chips 
+        chip_file_format (str): file type for image chips. ex JPEG/PNG etc
+        tile_name (str):  naming convention '{world_name}_tile_{left_col}_{top_row}'
+        profile (dict): tile_meta
+        
+    
+    References:      
+        Image profiles: https://rasterio.readthedocs.io/en/latest/topics/profiles.html
+        Supported drivers: https://gdal.org/drivers/raster/index.html
+        Saving Images: https://rasterio.readthedocs.io/en/latest/topics/writing.html           
+    """    
+    
+    tile_affine = image_tile_meta['transform']
+
+    image_chip_meta={}
+    if image_tile_filename.endswith('jpg') or image_tile_filename.endswith('JPEG'):
+        image_chip_meta['driver'] = 'JPEG'
+    elif image_tile_filename.endswith('tiff') or image_tile_filename.endswith('tif'):
+        image_chip_meta['driver'] = 'GTiff'
+    
+    # split the tile into chips
+    image_chips_array = patchify(image_tile_array, (3, chip_size_x, chip_size_y),  step=chip_window_stride)
+    
+    #Drop the extra unecessary dimension that patchify adds.                               
+    image_chips_array = image_chips_array[0] 
+            
+    # Iterate over the chips and write to disk the images and their world files
+    for i in range(image_chips_array.shape[0]):
+        for j in range(image_chips_array.shape[1]):
+
+            chip_filename = image_tile_filename.split('.')[0] + '_' + str(i) + '_' + str(j) + '.' + image_tile_filename.split('.')[1] 
+
+            image_chip_array = image_chips_array[j, i, :, :, :]
+
+            # # scale the image - note that the bit width of training data must match the bit width 
+            # # assumed by the backbone network. In the case where imagery is in uint16, the network floating point 
+            # resolution must be compatible to that.  
+            # scaled_image_chip_array = scaler.fit_transform(image_chip_array.reshape(-1, 3)).reshape(image_chip_array.shape)
+
+            # scaled_image_chip_array *= 255
+
+            image_chip_meta['dtype'] = image_tile_meta['dtype']
+            image_chip_meta['count'] = image_chip_array.shape[0]                                               #band count
+            image_chip_meta['width'] = image_chip_array.shape[1]                                               #xSize
+            image_chip_meta['height'] = image_chip_array.shape[2]                                              #ySize
+            image_chip_meta['photometric'] = 'RGB'
+            
+            left_col = i*chip_window_stride
+            top_row = j*chip_window_stride
+            
+            image_chip_meta['transform'] = __newTransform(
+                oldtransform= tile_affine,  
+                xy={'cols':left_col,'rows':top_row},
+                verbose=False
+            )        
+            
+            chip_filepath = os.path.join(save_path, chip_filename)
+
+            with rio.open(chip_filepath,'w+',**image_chip_meta) as dst:                             #create file
+                #left_col, top_row = col_num*profile['width'], row_num*profile['height'] #slice out chip
+                dst.write(image_chip_array)                                 #array[bands,xPosition,xSize,yPosition,ySize] 
+                __make_worldfile(image_chip_meta['transform'], chip_filepath,verbose)              #method for creating a world file. (a document that contains key affine info)
+                
+                
+    print(f'Chips saved  to {save_path} for tile {image_tile_filename} \n') if verbose else None
+    
+    
+    
+def save_tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, profile:dict, verbose:bool=False)->None: 
     """
     Notes:
         Method for saving tiles
-          does not currently update affine transform the upper left pixel location will have to be worked out for each patch
+          does not currently update affine transform the upper left pixel location will have to be worked out for each chip
     
-    *Note for future maintainters: Save_Tile & Save_Patches have very similar processes and inputs. 
+    *Note for future maintainters: save_tile & save_chips have very similar processes and inputs. 
                                     If one function is updated or changed, please review the other function to ensure that update is not needed there.  
         
     Inputs:
-            array (np.array): tile array 
+        array (np.array): tile array 
         save_directory (str): name of subfolder that will hold tile
-              save_fmt (str): file type for image tile. ex JPEG/PNG etc
-             tile_name (str): naming convention '{region_name}_tile_{left_col}_{top_row}'
-              profile (dict): tile_meta
+        save_fmt (str): file type for image tile. ex JPEG/PNG etc
+        tile_name (str): naming convention '{dir_name}_tile_{left_col}_{top_row}'
+        profile (dict): tile_meta
           
     Outputs:
         None: will result in a tile being saved as tile_name to save_directory in specified save_fmt format
@@ -487,7 +681,6 @@ def Save_Tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, p
                Saving Images: https://rasterio.readthedocs.io/en/latest/topics/writing.html           
     """    
     
-    
     profile['driver'] = 'JPEG' if save_fmt == 'jpg' else save_fmt.upper()       #rasterio recognizes JPEG for jpg
     profile['count'] = array.shape[0]                                           #band count
     profile['width'] = array.shape[1]                                           #xTileSize
@@ -495,7 +688,6 @@ def Save_Tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, p
     profile['photometric'] = 'RGB'
     
     print(f'updated raster meta data:\n{profile}') if verbose else None
-    
     
     tile_path = fr'{save_directory}/{tile_name}.{profile["driver"]}'
 
@@ -507,5 +699,12 @@ def Save_Tile(array:np.array, save_directory:str, save_fmt:str, tile_name:str, p
     with rio.open(tile_path,'w',**profile) as dst:
         dst.write(array)                                                        #tile array
         __make_worldfile(profile['transform'], tile_path,verbose)                       #method for creating a world file. (a document that contains key affine info)
-        
+    
     print(f'Save Completed to {save_directory}\n') if verbose else None
+
+def find_files(directory, pattern): 
+    """
+    Returns a list of the directories that the pattern is found
+    """
+    p = Path(directory)
+    return list(p.glob('**/' + pattern))

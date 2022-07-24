@@ -24,3 +24,4 @@ Shapely==1.7.1
 https://github.com/cgarrard/osgeopy-code/raw/master/ospybook-latest.zip
 planar
 wget
+

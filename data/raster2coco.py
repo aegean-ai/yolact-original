@@ -1,14 +1,6 @@
-from osgeo import gdal, gdalnumeric, ogr, gdal_array
-#import sys
-#sys.path.append(r'C:\Program Files\GDAL')
-
-
-# import ogr
-# import gdal_array
+from osgeo import gdal, gdalnumeric
 from skimage import measure
 import numpy as np
-import json
-import os
 import datetime
 from shapely.geometry import Polygon
 
@@ -19,7 +11,7 @@ speedups.disable()
 def raster2array(rasters,band_no=1):
     """
     Arguments:
-    rast            A gdal Raster object
+    rasters            A gdal Raster object
     band_no         band numerical order
     Example :
     raster = gdal.Open(rasterfn)
@@ -37,19 +29,25 @@ def raster2array(rasters,band_no=1):
 # This function will convert the rasterized clipper shapefile
 # to a mask for use within GDAL.
 def imageToArray(i):
+    
     """
     Converts a Python Imaging Library array to a
     gdalnumeric image.
     """
+    
     a=gdalnumeric.fromstring(i.tobytes(),'b')
+
     a.shape=i.im.size[1], i.im.size[0]
+    
     return a
 
 #
 def coord2pixelOffset(geotransform, x, y):
+    
     """
     Arguments:
-    geotransform            A gdal transform object
+    
+    geotransform  - A gdal transform object
     x               world coordinate x
     y               world coordinate y
     return  pixel position in image
@@ -115,11 +113,11 @@ def pixeloffset2coord(geoTransform,pixel_xOffset,pixel_yOffset):
 
 
 INFO = {
-    "description": "sidewalk test Dataset",
+    "description": "Sidewalk Validation Dataset",
     "url": "",
     "version": "0.1.0",
-    "year": 2019,
-    "contributor": "czh_njit",
+    "year": 2022,
+    "contributor": "Aegean AI",
     "date_created": datetime.datetime.utcnow().isoformat(' ')
 }
 
@@ -140,11 +138,15 @@ CATEGORIES = [
 ]
 
 class Raster2Coco():
-    def __init__(self, labelFiles, labelDir):
-        self.labelFiles = labelFiles
-        self.labelDir = labelDir
+    
+    def __init__(self, files_array, dir, has_gt):
+        
+        self.files_array = files_array
+        self.input_dir = dir
+        self.has_gt = has_gt
 
     def createJSON(self):
+
         self.cocoJSON = {
             "info": INFO,
             "licenses": LICENSES,
@@ -152,41 +154,54 @@ class Raster2Coco():
             "images": [],
             "annotations": []
         }
-        annotation_idx = 1
-        for img_idx, labelFile in enumerate(self.labelFiles):
-            self.genImgJSON(labelFile, img_idx+1, 1, annotation_idx + 10000 * img_idx)
+        
+        self.genDirAnnotations(band_number=1)
 
         return(self.cocoJSON)
 
-    def genImgJSON(self, tiff_filepath, img_idx, band_no=1, annotation_idx=1):
-        rasters = gdal.Open('%s/%s'%(self.labelDir,tiff_filepath))
-        raster_array = raster2array(rasters,band_no)
+    def genDirAnnotations(self, band_number):
+        """
+        Generates for the list of images contained in files_array the portion of the coco encoded json format that corresponds to 
+        the image info (["images"]) and, if there is ground truth in the dataset, the annotations (["annotations"]). 
+        """
+        annotation_idx = 1
+        for img_idx, labelFile in enumerate(self.files_array):
+            
+            raster = gdal.Open('%s/%s'%(self.input_dir,labelFile))
+            raster_array = raster2array(raster, band_number)
 
-        #get size of image
-        img_Width = rasters.RasterXSize
-        img_Height = rasters.RasterYSize
-        img_size = [img_Width,img_Height]
+            self.genImgJSON(raster_array, labelFile,  img_idx+1, annotation_idx + 10000 * img_idx, annotation_threshold=7)
+        
+        return(self.cocoJSON)
+    
+    def genImgJSON(self, raster_array, filename, img_idx, annotation_idx=1, annotation_threshold=7):
+        
+        img_size = [raster_array.shape[0],raster_array.shape[1]]
 
         #create image_info
-        #tiff_filepath = os.path.join(self.labelDir, os.path.basename(tiff_filepath))
-        image_info = self.create_image_info(img_idx,tiff_filepath,img_size)
+        image_info = self.create_image_info(img_idx, filename, img_size)
+        
         self.cocoJSON["images"].append(image_info)
 
-        # create annotations
-        polygons = self.binaryMask2Polygon(raster_array)
+        if self.has_gt==True:
+            # create annotations
+            polygons = self.binaryMask2Polygon(raster_array)
 
-        for idx,polygon in enumerate(polygons):
-            if polygon.size > 7:
+            for idx,polygon in enumerate(polygons):
+                # # TODO: understand how to optimize the threshold below
+                # if polygon.size > annotation_threshold:
                 category_info = {'id':1,"is_crowd":0}
-                annotation_info = self.create_annotation_info(idx+annotation_idx,img_idx,category_info,polygon,img_size)
+                annotation_info = self.create_annotation_info(idx+annotation_idx, img_idx, category_info, polygon, img_size)
+                
                 self.cocoJSON["annotations"].append(annotation_info)
 
 
     def binaryMask2Polygon(self,binaryMask):
+
         polygons =[]
 
         padded_binary_mask = np.pad(binaryMask, pad_width=1, mode='constant', constant_values=0)
-        contours = measure.find_contours(padded_binary_mask,0.5)
+        contours = measure.find_contours(padded_binary_mask)
         contours = np.subtract(contours, 1)
 
         def closeContour(contour):
@@ -209,9 +224,13 @@ class Raster2Coco():
             polygons.append(contour)
         return polygons
 
-    def create_image_info(self,image_id, file_name, image_size,
-                          date_captured=datetime.datetime.utcnow().isoformat(' '),
-                          license_id=1, coco_url="", flickr_url=""):
+    def create_image_info(self,
+            image_id, 
+            file_name, 
+            image_size,
+            date_captured=datetime.datetime.utcnow().isoformat(' '),
+            license_id=1, coco_url="", flickr_url=""
+        ):
 
         image_info = {
             "id": image_id,
@@ -226,8 +245,15 @@ class Raster2Coco():
 
         return image_info
 
-    def create_annotation_info(self,annotation_id, image_id, category_info, segmentation,
-                               image_size=None, tolerance=2, bounding_box=None):
+    def create_annotation_info(self,
+            annotation_id, 
+            image_id, 
+            category_info, 
+            segmentation,
+            image_size=None, 
+            tolerance=2, 
+            bounding_box=None
+        ):
         try:
             polygon = Polygon(np.squeeze(segmentation))
             # print(type(polygon))
