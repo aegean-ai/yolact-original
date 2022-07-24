@@ -71,7 +71,7 @@ import sys
 import json
 from s3_helper import s3_to_local
 from split_merge_raster import convert_tiles, open_raster,split_raster,save_tile,save_chips, save_training_chips            #These are all called w/in genImgChips
-from split_merge_vector import _partitionGeoJSON, find_files
+from split_merge_vector import _partitionGeoJSON, _centerline,  find_files
 import time                                                                               #used in decorator __time_this()
 from pycocotools import mask
 import numpy as np
@@ -101,8 +101,8 @@ config = {
     'pef': 0.1, # Print-every-factor: Prints percentage completion after ever 'pef' factor of completion.
     'score_threshold':0.0, # During evaluation of inferences from raw data using Model: Minimum score threshold for detecting sidewalks.
     'det_score_threshold':0.0, # During generation of inference data from already generated inferenceJSON: Minimum sidewalk detection score threshold to include detection. 
-    'rowsSplitPerTile':20, # Expected rows per tile
-    'colsSplitPerTile':20, # Expected columns per tile
+    'rowsSplitPerInfTile':20, # Expected rows per tile
+    'colsSplitPerInfTile':20, # Expected columns per tile
     'chipDimX':256, # Chip dimension X
     'chipDimY':256, # Chip dimension Y
     'chipWindowStride': 192, # stride of the sliding window that patchifies the tile into chips
@@ -126,7 +126,8 @@ config = {
     'featuresGeoJSONRootPathFile':None,
     'buffer_value':int,
     'tile_geojson_target_crs': str, # the crs of the generated tile geojsons. 
-    'sidewalk_annotation_threshold':int
+    'sidewalk_annotation_threshold':int,
+    'targetProjection': str
 }
 
 #----------------------------------------------------------------#
@@ -161,8 +162,8 @@ def setConfig(argv):
         'pef' : float,
         'score_threshold': float,
         'det_score_threshold':float,
-        'rowsSplitPerTile':int,
-        'colsSplitPerTile':int,
+        'rowsSplitPerInfTile':int,
+        'colsSplitPerInfTile':int,
         'chipDimX':int,
         'chipDimY':int,
         'tvRatio':float
@@ -632,7 +633,7 @@ def genTrainingImgChips():
                 verbose = config['verbose']
             )
                
-    # # Summary  - commented out as the dir contains too many files      
+    # # Summary  - commented out as the dir contains too many files that may exceed linux filesystem reporting limit setting     
     # chipFiles = __listdir(directory=chipsDir, extensions=['jpeg'])                            
 
     # vbPrint(f"Number of chips created in {chipsDir}: {len(chipFiles)}\n{'-'*4}Image Chips made successfully{'-'*4}")
@@ -737,7 +738,7 @@ def genAnnotations():
     vbPrint('Annotations made and saved successfully')
 
 
-def genImageInfo():
+def genImgChipsInfo():
     """
     Generates the COCO-test dataset compatible image info files
     
@@ -771,7 +772,7 @@ def genImageInfo():
     
     # Generate image info - test data do not have ground truth
     vbPrint('Generating image info for the test data')
-    testR2C = Raster2Coco(chips, chipsDir, has_gt=False)
+    testR2C = Raster2Coco(chips, chipsDir, has_gt=has_gt)
     testJSON = testR2C.createJSON()
 
     with open('%s/image_info_test.json'%(annDir), 'w') as outfile:
@@ -945,8 +946,8 @@ def genInferenceTileGeoJSON():
         infData = json.load(f)['images']
     
     chipShape = (config['chipDimX'],config['chipDimY'])
-    infTileShape = (chipShape[0]*config['colsSplitPerTile'],
-                    chipShape[1]*config['rowsSplitPerTile'])
+    infTileShape = (chipShape[0]*config['colsSplitPerInfTile'],
+                    chipShape[1]*config['rowsSplitPerInfTile'])
 
     vbPrint('Expected Chip dimensions: %ix%i'%(chipShape[0],chipShape[1]))
     vbPrint('Expected Tiles dimensions: %ix%i'%(infTileShape[0],infTileShape[1]))
@@ -983,12 +984,12 @@ def genInferenceTileGeoJSON():
     vbPrint('Generating inference tiles from detection masks')
 
     # Rows and columns a tile is split into.
-    # Default is 20,20
-    num_chips_per_tile_rows = config['rowsSplitPerTile']
-    num_chips_per_tile_cols = config['colsSplitPerTile']
+    num_chips_per_tile_rows = config['rowsSplitPerInfTile']
+    num_chips_per_tile_cols = config['colsSplitPerInfTile']
     expectedChips = num_chips_per_tile_rows*num_chips_per_tile_cols
 
-    projectionTransformer = pyproj.Transformer.from_crs("epsg:32111","epsg:4326",always_xy=False)
+    projectionTransformer = pyproj.Transformer.from_crs(crs_from="epsg:4326", crs_to="epsg:6527", always_xy=False)
+    #projectionTransformer = pyproj.Transformer.from_crs("epsg:32111","epsg:4326",always_xy=False)
     #projectionTransformer = pyproj.Transformer.from_crs("epsg:4326", "epsg:6565", always_xy=False)
 
     i = 0
@@ -1006,10 +1007,10 @@ def genInferenceTileGeoJSON():
             vbPrint('Found %i chips for tile %s. Skipping'%(len(tileMap[tile]), tile))
         else:
             # The inference tile. Initialized with 0. Inference chips are overlayed at their respective locations.
-            infTile = np.zeros((num_chips_per_tile_rows*chipShape[0],num_chips_per_tile_cols*chipShape[1]), dtype=np.uint8)
+            infTile = np.zeros((num_chips_per_tile_rows*chipShape[0],num_chips_per_tile_cols*chipShape[1]),dtype=np.uint8)
             print(tile)
             for chipID,row,col in tileMap[tile]:
-                print(chipID, row, col)
+                #print(chipID, row, col)
                 
                 #print('(%i, %i)'%(row, col))
                 # Overlays the chip mask at the correct location in infTile
@@ -1121,15 +1122,35 @@ def genInferenceTileGeoJSON():
         geoJSONf.write('\n]}')
     geoJSONf.close()
 
+    # generate the centerline of the segmentation polygons
+    geoJSONCenterlinesPathFile = "%s/%s"%(inferenceGeoJSONDir,'sidewalks.geojson')
+    geoJSONPolygonPathFile = "%s/%s"%(inferenceGeoJSONDir,geoJSONFilename)
+    # Convert polygon geojson to shp
+
+    # First ensure that the geojson is projected to the target CRS 
+    gdf = gpd.read_file(geoJSONPolygonPathFile)
+    gdf.to_file(geoJSONPolygonPathFile, crs="EPSG:6527")
+    gdf = gpd.read_file(geoJSONPolygonPathFile)
+    _shp_pathfile = os.path.splitext(geoJSONPolygonPathFile)[0]+'.shp'
+    # the created SHP inherits the same CRS
+    gdf.to_file(_shp_pathfile, crs="EPSG:6527")
+    
+    with open(_shp_pathfile,'r') as shpf:
+        _centerline(_shp_pathfile, geoJSONCenterlinesPathFile)
+    shpf.close()
+
     if(genGeoJSON and genImgs):
         vbPrint('Inference GeoJSON and Tiles generated Successfully')
     elif(genGeoJSON):
-        vbPrint('Inference GeoJSON generated Successfully')
+        vbPrint('Inference GeoJSON polygons and centerlines generated Successfully')
     elif(genImgs):
         vbPrint('Inference Tiles generated Successfully')
     else:
         vbPrint('Inference Data ran successfully. Nothing saved due to arguments passed.')
 
+
+
+    
 def genTrainingTileGeoJSONs():
     """
     Partition the area features to per-tile features. Generates geoJSON per tile from a large geoJSON input features file that corresponds to a region (eg DVRPC) and a tile index geoJSON file that defines the extents of the tiles. 

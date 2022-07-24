@@ -154,23 +154,27 @@ class Raster2Coco():
             "images": [],
             "annotations": []
         }
-       
+        
+        self.genDirAnnotations(band_number=1)
+
         return(self.cocoJSON)
 
     def genDirAnnotations(self, band_number):
-
+        """
+        Generates for the list of images contained in files_array the portion of the coco encoded json format that corresponds to 
+        the image info (["images"]) and, if there is ground truth in the dataset, the annotations (["annotations"]). 
+        """
         annotation_idx = 1
         for img_idx, labelFile in enumerate(self.files_array):
             
             raster = gdal.Open('%s/%s'%(self.input_dir,labelFile))
             raster_array = raster2array(raster, band_number)
 
-            self.genImgJSON(raster_array, labelFile,  img_idx+1, 1, annotation_idx + 10000 * img_idx, annotation_threshold=7)
+            self.genImgJSON(raster_array, labelFile,  img_idx+1, annotation_idx + 10000 * img_idx, annotation_threshold=7)
         
         return(self.cocoJSON)
     
-    def genImgJSON(self, raster_array, filename, img_idx, band_no=1, annotation_idx=1, annotation_threshold=7):
-        
+    def genImgJSON(self, raster_array, filename, img_idx, annotation_idx=1, annotation_threshold=7):
         
         img_size = [raster_array.shape[0],raster_array.shape[1]]
 

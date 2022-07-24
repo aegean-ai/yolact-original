@@ -18,7 +18,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES=graphics,utility,compute
 ENV QT_X11_NO_MITSHM 1
 
 # Set this until this is resolved https://github.com/pytorch/pytorch/issues/37377 or package versions are fixed
-ENV 'MKL_THREADING_LAYER' = 'GNU'
+ENV MKL_THREADING_LAYER="GNU"
 
 # Keeps Python from generating .pyc files in the container
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -89,7 +89,7 @@ ENV CONDA_DEFAULT_ENV=sidewalk-env
 # Configure .bashrc to drop into a conda env and immediately activate our TARGET env
 RUN CONDA_DEFAULT_ENV=sidewalk-env conda init && echo 'conda activate "${CONDA_DEFAULT_ENV:-base}"' >>  ~/.bashrc
 
-ENV LD_LIBRARY_PATH=/opt/conda/lib:/opt/conda/envs/sidewalk-env/lib:${LD_LIBRARY_PATH}
+ENV LD_LIBRARY_PATH=/opt/conda/lib:/opt/conda/envs/sidewalk-env/lib:/workspaces/sidewalk-detection/segmentation/models/yolact-original/external/DCNv2_latest:${LD_LIBRARY_PATH}
 
 RUN apt-get update -y && apt-get install -y libgl1-mesa-glx
 

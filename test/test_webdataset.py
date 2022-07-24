@@ -8,14 +8,13 @@ imageryRootPath = '/workspaces/data/njtpa.auraison.aegean.ai/imagery/dvrpc-tiles
 tar_url = '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root4/imageChips_ts4/dvrpc-2022-val.tar'
 webdatasetRootPath='/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root6/imageTiles_ts6'
 
-#tiles=[]
+tiles=[]
 
-# for root, dirs, files in os.walk(imageryRootPath):
-#     for filename in fnmatch.filter(files, '*.tif'):
-#         tiles.append(os.path.join(root, filename))
+for root, dirs, files in os.walk(imageryRootPath):
+    for filename in fnmatch.filter(files, '*.tif'):
+        tiles.append(os.path.join(root, filename))
 
-# print(tiles)
-# print('Number of imagery geoTIFF tiles', len(tiles))
+print('Number of imagery geoTIFF tiles', len(tiles))
 
 
 print("Loading tar file")

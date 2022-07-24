@@ -149,8 +149,8 @@ njgin_dataset = dataset_base.copy({
     'train_images': None,
     'train_info': None,
 
-    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root3/imageChips_ts3',
-    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root3/annotations_ts3/image_info_test.json',
+    'valid_images': '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root6/imageChips_ts6',
+    'valid_info':   '/workspaces/data/njtpa.auraison.aegean.ai/pipeline-runs/project_root6/annotations_ts6/image_info_test.json',
 
     'has_gt': False,
     'class_names': ('sidewalk')
